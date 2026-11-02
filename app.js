@@ -2,12 +2,13 @@
 // prebuilt JSON. Learner progress lives in localStorage under STORE_KEY and, once connected,
 // syncs to a secret gist (sync.js) that the daily lesson generator reads to adapt each lesson.
 
-import * as core from './core.js?v=b30c6574d8';
-import * as speech from './speech.js?v=b30c6574d8';
-import * as sync from './sync.js?v=b30c6574d8';
+import * as core from './core.js?v=4f49a8266e';
+import * as speech from './speech.js?v=4f49a8266e';
+import * as sync from './sync.js?v=4f49a8266e';
 
 const STORE_KEY = 'english-daily:v1';
 const SYNC_DELAY_MS = 4000;
+const PULL_EVERY_MS = 60000;
 const WEEKDAYS = '日一二三四五六';
 const SLOW_RATE = 0.7;
 const RATES = [0.8, 1, 1.2];
@@ -170,6 +171,15 @@ function syncNow({ manual = false } = {}) {
   return syncing;
 }
 
+function paintSyncLine() {
+  const el = document.getElementById('sync-line');
+  if (!el) return;
+  const cfg = sync.loadConfig();
+  el.hidden = !cfg.gistId;
+  el.classList.toggle('bad', Boolean(cfg.error));
+  el.textContent = cfg.error ? `同步失敗：${cfg.error}` : cfg.last ? `已同步・${formatTime(cfg.last)}` : '同步中…';
+}
+
 function refreshIfIdle() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const idle = !parts.length || (parts[0] === 'l' && parts.length === 2) || parts[0] === 'progress' || parts[0] === 'archive';
@@ -189,11 +199,54 @@ async function getJSON(url) {
   return res.json();
 }
 
-function lesson(date) {
+async function lesson(date) {
   if (!lessonCache.has(date)) {
     lessonCache.set(date, getJSON(`data/lessons/${date}.json`).then((L) => { speech.addClips(L.audio); return L; }));
   }
-  return lessonCache.get(date);
+  const L = await lessonCache.get(date);
+  backfillResults(L);
+  return L;
+}
+
+// Score answers that have no result yet: answers given before scores were recorded, or synced
+// from a device running an older version. Every device computes the same values.
+function backfillResults(L) {
+  const answers = S.answers[L.date];
+  if (!answers) return;
+  const res = (S.results[L.date] ||= {});
+  let added = 0;
+  const v = (key) => answers[key]?.v;
+  const score = (key, value) => {
+    if (res[key] || typeof value !== 'number' || !Number.isFinite(value)) return;
+    res[key] = { s: Math.round(value * 1000) / 1000, t: answers[key]?.t || 0 };
+    added += 1;
+  };
+  const questions = (kind, items) => (items || []).forEach((item, i) => {
+    const a = v(`${kind}.${i}`);
+    if (a != null) score(`${kind}.${i}`, (item.type === 'fill' ? core.checkFill(item, a) : a === item.answer) ? 1 : 0);
+  });
+  const spoken = (prefix, sentences) => (sentences || []).forEach((sentence, i) => {
+    const a = v(`${prefix}.${i}`);
+    if (typeof a === 'string' && a && a !== 'quiet') score(`${prefix}.${i}`, core.alignWords(sentence, a).score);
+  });
+  questions('read', L.reading.questions);
+  questions('listen', L.listening.questions);
+  questions('grammar', L.grammar.exercises);
+  questions('review', L.grammar.review?.exercises);
+  questions('ch.read', L.challenge?.reading.questions);
+  questions('ch.listen', L.challenge?.listening.questions);
+  spoken('dict', L.listening.dictation);
+  spoken('ch.dict', L.challenge?.listening.dictation);
+  spoken('shadow', L.speaking.shadowing);
+  L.translation.forEach((t, i) => {
+    const a = v(`trans.${i}`);
+    if (typeof a === 'string' && a) score(`trans.${i}`, translationScore(t, a));
+  });
+  if (v('write.submitted') && typeof v('write.draft') === 'string') {
+    const checks = writingChecks(L, v('write.draft'));
+    score('write.submitted', checks.filter((c) => c.ok).length / checks.length);
+  }
+  if (added) save();
 }
 
 function practicePool() {
@@ -835,6 +888,7 @@ async function homePage(date) {
     h('div', { class: 'stats' },
       stat(`${streak()}`, '連續天數'), stat(`${finished}/${SECTIONS.length}`, '今日進度'),
       stat(`${queue.length}`, '待複習單字'), stat(`${DECK.length}`, '單字庫')),
+    h('p', { class: 'sync-line', id: 'sync-line' }),
     isCurrent ? coachCard(entry.coach) : null,
     next
       ? h('a', { class: 'btn primary wide', href: `#/l/${date}/${next.id}` }, finished ? `繼續：${next.zh}` : '開始今天的課')
@@ -1429,6 +1483,7 @@ async function route() {
     put(view, errorBox(err));
   }
   document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.dataset.tab === tab));
+  paintSyncLine();
   updateBadge();
   window.scrollTo(0, 0);
 }
@@ -1449,11 +1504,15 @@ async function boot() {
   }
   window.addEventListener('hashchange', route);
   await route();
-  syncNow().then((changed) => { if (changed) refreshIfIdle(); });
+  const pull = () => syncNow().then((changed) => { if (changed) refreshIfIdle(); else paintSyncLine(); });
+  pull();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { if (dirty) syncNow(); return; }
-    syncNow().then((changed) => { if (changed) refreshIfIdle(); });
+    pull();
   });
+  window.addEventListener('focus', pull);
+  window.addEventListener('pageshow', (e) => { if (e.persisted) pull(); });
+  setInterval(() => { if (document.visibilityState === 'visible') pull(); }, PULL_EVERY_MS);
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 

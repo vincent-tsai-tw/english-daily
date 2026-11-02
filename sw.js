@@ -1,7 +1,7 @@
 // Network first, cache as fallback: always fresh online, still usable offline (e.g. on the MRT).
-const CACHE = 'english-daily-b30c6574d8';
-const SHELL = ['./', 'index.html', 'style.css?v=b30c6574d8', 'app.js?v=b30c6574d8', 'core.js?v=b30c6574d8',
-  'speech.js?v=b30c6574d8', 'sync.js?v=b30c6574d8', 'data/index.json', 'data/vocab.json'];
+const CACHE = 'english-daily-4f49a8266e';
+const SHELL = ['./', 'index.html', 'style.css?v=4f49a8266e', 'app.js?v=4f49a8266e', 'core.js?v=4f49a8266e',
+  'speech.js?v=4f49a8266e', 'sync.js?v=4f49a8266e', 'data/index.json', 'data/vocab.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting()));

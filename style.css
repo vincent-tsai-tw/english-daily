@@ -339,3 +339,5 @@ select.field { appearance: auto; }
 .setting > .field { justify-self: stretch; }
 .sync-status { font-size: 14px; color: var(--ok); }
 .sync-status.bad { color: var(--bad); }
+.sync-line { font-size: 13px; color: var(--text-3); margin-top: 8px !important; }
+.sync-line.bad { color: var(--bad); }
