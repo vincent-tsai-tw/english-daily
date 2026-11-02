@@ -1,10 +1,15 @@
 // Network first, cache as fallback: always fresh online, still usable offline (e.g. on the MRT).
-const CACHE = 'english-daily-4f49a8266e';
-const SHELL = ['./', 'index.html', 'style.css?v=4f49a8266e', 'app.js?v=4f49a8266e', 'core.js?v=4f49a8266e',
-  'speech.js?v=4f49a8266e', 'sync.js?v=4f49a8266e', 'data/index.json', 'data/vocab.json'];
+// Requests revalidate with the server (cache: 'no-cache'), so GitHub Pages' 10-minute HTTP cache
+// never serves an outdated page after a new version is published.
+const CACHE = 'english-daily-1d35b7ca60';
+const SHELL = ['./', 'index.html', 'style.css?v=1d35b7ca60', 'app.js?v=1d35b7ca60', 'core.js?v=1d35b7ca60',
+  'speech.js?v=1d35b7ca60', 'sync.js?v=1d35b7ca60', 'data/index.json', 'data/vocab.json'];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE)
+    .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' }))))
+    .catch(() => {})
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -13,14 +18,24 @@ self.addEventListener('activate', (event) => {
     .then(() => self.clients.claim()));
 });
 
+// Versioned files (?v=) never change; everything else is revalidated with the server.
+function revalidate(req) {
+  if (new URL(req.url).searchParams.has('v')) return fetch(req);
+  // A navigation request cannot be copied with new options, so fetch its URL instead.
+  if (req.mode === 'navigate') return fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
+  return fetch(new Request(req, { cache: 'no-cache' }));
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  event.respondWith(fetch(req)
+  // Audio is streamed with range requests; Safari only plays it reliably without the worker.
+  if (req.headers.has('range') || req.destination === 'audio') return;
+  event.respondWith(revalidate(req)
     .then((res) => {
-      if (res.ok) {
+      if (res.ok && res.status === 200) {
         const copy = res.clone();
-        caches.open(CACHE).then((cache) => cache.put(req, copy));
+        caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(() => {});
       }
       return res;
     })

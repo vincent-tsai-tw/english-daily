@@ -2,9 +2,9 @@
 // prebuilt JSON. Learner progress lives in localStorage under STORE_KEY and, once connected,
 // syncs to a secret gist (sync.js) that the daily lesson generator reads to adapt each lesson.
 
-import * as core from './core.js?v=4f49a8266e';
-import * as speech from './speech.js?v=4f49a8266e';
-import * as sync from './sync.js?v=4f49a8266e';
+import * as core from './core.js?v=1d35b7ca60';
+import * as speech from './speech.js?v=1d35b7ca60';
+import * as sync from './sync.js?v=1d35b7ca60';
 
 const STORE_KEY = 'english-daily:v1';
 const SYNC_DELAY_MS = 4000;
@@ -175,15 +175,26 @@ function paintSyncLine() {
   const el = document.getElementById('sync-line');
   if (!el) return;
   const cfg = sync.loadConfig();
-  el.hidden = !cfg.gistId;
-  el.classList.toggle('bad', Boolean(cfg.error));
-  el.textContent = cfg.error ? `同步失敗：${cfg.error}` : cfg.last ? `已同步・${formatTime(cfg.last)}` : '同步中…';
+  el.classList.toggle('bad', !cfg.gistId || Boolean(cfg.error));
+  if (!cfg.gistId) {
+    put(el, '這台裝置還沒開啟同步，進度不會和其他裝置共用・', h('a', { href: '#/settings' }, '去設定'));
+  } else if (cfg.error) {
+    put(el, `同步失敗：${cfg.error}・`, h('a', { href: '#/settings' }, '查看'));
+  } else {
+    put(el, cfg.last ? `已同步・${formatTime(cfg.last)}` : '同步中…');
+  }
+}
+
+let updateReady = false;
+
+// Pages without anything half-typed: safe to re-render or reload.
+function isIdleRoute() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  return !parts.length || (parts[0] === 'l' && parts.length === 2) || parts[0] === 'progress' || parts[0] === 'archive';
 }
 
 function refreshIfIdle() {
-  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const idle = !parts.length || (parts[0] === 'l' && parts.length === 2) || parts[0] === 'progress' || parts[0] === 'archive';
-  if (idle) route(); else updateBadge();
+  if (isIdleRoute()) route(); else updateBadge();
 }
 
 // --- Data -----------------------------------------------------------------------------------
@@ -1461,6 +1472,7 @@ function errorBox(err) {
 }
 
 async function route() {
+  if (updateReady) { location.reload(); return; }
   speech.stop();
   hideSheet();
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
@@ -1513,7 +1525,17 @@ async function boot() {
   window.addEventListener('focus', pull);
   window.addEventListener('pageshow', (e) => { if (e.persisted) pull(); });
   setInterval(() => { if (document.visibilityState === 'visible') pull(); }, PULL_EVERY_MS);
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || updateReady) return;
+      updateReady = true;
+      if (isIdleRoute()) location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      setInterval(() => reg.update().catch(() => {}), PULL_EVERY_MS * 10);
+    }).catch(() => {});
+  }
 }
 
 boot();
