@@ -341,3 +341,17 @@ select.field { appearance: auto; }
 .sync-status.bad { color: var(--bad); }
 .sync-line { font-size: 13px; color: var(--text-3); margin-top: 8px !important; }
 .sync-line.bad { color: var(--bad); }
+
+/* Signed out: no tabs or quiet-mode switch, just the sign-in card */
+.signed-out .tabs, .signed-out #quiet { display: none; }
+.signin { max-width: 460px; margin: 0 auto; padding-top: 8vh; }
+.profiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 24px !important; }
+.profile {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 12px; cursor: pointer;
+  border: 1px solid var(--sep); border-radius: var(--radius); background: var(--bg-alt); color: var(--text); font-size: 19px; font-weight: 600;
+}
+.profile:active { transform: scale(.98); }
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 28px; font-weight: 600;
+}

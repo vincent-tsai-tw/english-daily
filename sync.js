@@ -1,10 +1,10 @@
-// Cross-device sync of learner progress through a secret GitHub gist. The token (classic, gist
-// scope only) is kept in this browser under CONFIG_KEY and is never written into the gist.
-// scripts/progress.py reads the same gist to adapt the daily lesson.
+// Cross-device sync of learner progress through one secret GitHub gist, one file per learner
+// (fileFor). The token (classic, gist scope only) is kept in this browser under CONFIG_KEY and is
+// never written into the gist. scripts/gist_sync.py reads the same files to adapt daily lessons.
 
 const API = 'https://api.github.com';
 export const GIST_DESCRIPTION = 'english-daily progress';
-export const GIST_FILE = 'english-daily-progress.json';
+export const fileFor = (slug) => `english-daily-progress-${slug}.json`; // as scripts/progress.py
 export const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=English%20Daily%20sync';
 const CONFIG_KEY = 'english-daily:sync';
 
@@ -52,35 +52,35 @@ export async function whoAmI(token) {
   return data.login;
 }
 
-// Return the id of the progress gist, creating a secret one with `initial` content if needed.
-export async function findOrCreateGist(token, initial) {
+// Return the id of the progress gist, creating a secret one with `initial` in `file` if needed.
+export async function findOrCreateGist(token, file, initial) {
   for (let page = 1; page <= 10; page++) {
     const { data } = await api(token, `/gists?per_page=100&page=${page}`);
-    const hit = data.find((g) => g.description === GIST_DESCRIPTION && g.files?.[GIST_FILE]);
+    const hit = data.find((g) => g.description === GIST_DESCRIPTION);
     if (hit) return hit.id;
     if (data.length < 100) break;
   }
   const { data } = await api(token, '/gists', {
     method: 'POST',
-    body: { description: GIST_DESCRIPTION, public: false, files: { [GIST_FILE]: { content: JSON.stringify(initial) } } },
+    body: { description: GIST_DESCRIPTION, public: false, files: { [file]: { content: JSON.stringify(initial) } } },
   });
   return data.id;
 }
 
-// Read the synced document; null when the gist has no progress file yet.
-export async function read(token, id) {
+// Read one learner's synced document; null when the gist has no file for them yet.
+export async function read(token, id, file) {
   const { data } = await api(token, `/gists/${id}`);
-  const file = data.files?.[GIST_FILE];
-  if (!file) return null;
-  let text = file.content;
-  if (file.truncated) {
-    const res = await fetch(file.raw_url, { cache: 'no-store' });
+  const entry = data.files?.[file];
+  if (!entry) return null;
+  let text = entry.content;
+  if (entry.truncated) {
+    const res = await fetch(entry.raw_url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`讀取同步資料失敗（${res.status}）。`);
     text = await res.text();
   }
   try { return JSON.parse(text); } catch { throw new Error('同步資料格式錯誤。'); }
 }
 
-export async function write(token, id, doc) {
-  await api(token, `/gists/${id}`, { method: 'PATCH', body: { files: { [GIST_FILE]: { content: JSON.stringify(doc) } } } });
+export async function write(token, id, file, doc) {
+  await api(token, `/gists/${id}`, { method: 'PATCH', body: { files: { [file]: { content: JSON.stringify(doc) } } } });
 }

@@ -1,12 +1,13 @@
-// English Daily: the single-page app. Lessons, the vocabulary deck and the practice pool are
-// prebuilt JSON. Learner progress lives in localStorage under STORE_KEY and, once connected,
-// syncs to a secret gist (sync.js) that the daily lesson generator reads to adapt each lesson.
+// English Daily: the single-page app for a few learners on shared devices. Each device picks a
+// profile (ME); that learner's lessons, deck and practice pool are prebuilt JSON under
+// data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
+// to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=1d35b7ca60';
-import * as speech from './speech.js?v=1d35b7ca60';
-import * as sync from './sync.js?v=1d35b7ca60';
+import * as core from './core.js?v=faa866384a';
+import * as speech from './speech.js?v=faa866384a';
+import * as sync from './sync.js?v=faa866384a';
 
-const STORE_KEY = 'english-daily:v1';
+const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
 const PULL_EVERY_MS = 60000;
 const WEEKDAYS = '日一二三四五六';
@@ -44,21 +45,29 @@ function freshState() {
   return { ...core.migrateState({}), settings: { ...DEFAULT_SETTINGS } };
 }
 
+const storeKey = () => `english-daily:v1:${ME.slug}`;
+
+function loadMe() {
+  try { return JSON.parse(localStorage.getItem(ME_KEY) || 'null'); } catch { return null; }
+}
+
 function loadState() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    const raw = JSON.parse(localStorage.getItem(storeKey()) || 'null');
     if (raw && typeof raw === 'object') return { ...core.migrateState(raw), settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) } };
   } catch { /* unreadable or blocked storage: start fresh in memory */ }
   return freshState();
 }
 
-let S = loadState();
+let ME = loadMe();
+let S = ME ? loadState() : freshState();
 let dirty = false;
 let syncTimer;
 let syncing = null;
 
 function persist() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch { /* private mode: memory only */ }
+  if (!ME) return;
+  try { localStorage.setItem(storeKey(), JSON.stringify(S)); } catch { /* private mode: memory only */ }
 }
 
 // Save learner progress and schedule a sync. Settings changes use persist(): they never sync.
@@ -144,19 +153,22 @@ function scheduleSync() {
 // Pull, merge and push. Resolves true when the merge changed this device's data.
 function syncNow({ manual = false } = {}) {
   const cfg = sync.loadConfig();
-  if (!cfg.token || !cfg.gistId) return Promise.resolve(false);
+  if (!cfg.token || !cfg.gistId || !ME) return Promise.resolve(false);
   if (syncing) return syncing;
+  const slug = ME.slug;
+  const file = sync.fileFor(slug);
   clearTimeout(syncTimer);
   syncing = (async () => {
     try {
       const before = core.syncDoc(S);
-      const raw = await sync.read(cfg.token, cfg.gistId);
+      const raw = await sync.read(cfg.token, cfg.gistId, file);
+      if (ME?.slug !== slug) return false; // the profile was switched meanwhile
       const remote = raw ? core.syncDoc(core.migrateState(raw)) : null;
       // Merge again with S: answers given while the request was in flight must not be lost.
       const merged = core.mergeDocs(remote ? core.mergeDocs(before, remote) : before, core.syncDoc(S));
       Object.assign(S, merged);
       persist();
-      if (!remote || !core.sameDoc(merged, remote)) await sync.write(cfg.token, cfg.gistId, merged);
+      if (!remote || !core.sameDoc(merged, remote)) await sync.write(cfg.token, cfg.gistId, file, merged);
       dirty = false;
       sync.saveConfig({ ...sync.loadConfig(), last: now(), error: '' });
       return !core.sameDoc(merged, before);
@@ -199,6 +211,7 @@ function refreshIfIdle() {
 
 // --- Data -----------------------------------------------------------------------------------
 
+let PROFILES = [];
 let INDEX = [];
 let DECK = [];
 const lessonCache = new Map();
@@ -212,7 +225,7 @@ async function getJSON(url) {
 
 async function lesson(date) {
   if (!lessonCache.has(date)) {
-    lessonCache.set(date, getJSON(`data/lessons/${date}.json`).then((L) => { speech.addClips(L.audio); return L; }));
+    lessonCache.set(date, getJSON(`${dataBase()}/lessons/${date}.json`).then((L) => { speech.addClips(L.audio); return L; }));
   }
   const L = await lessonCache.get(date);
   backfillResults(L);
@@ -261,7 +274,7 @@ function backfillResults(L) {
 }
 
 function practicePool() {
-  poolPromise ||= getJSON('data/practice.json')
+  poolPromise ||= getJSON(`${dataBase()}/practice.json`)
     .then((pool) => {
       for (const x of [...pool.sentences, ...pool.translate]) if (x.audio) speech.addClips({ [x.en]: x.audio });
       return pool;
@@ -273,6 +286,34 @@ function practicePool() {
 const currentLessonDate = () => (INDEX.find((x) => x.date <= today()) || INDEX[INDEX.length - 1])?.date;
 const entryFor = (date) => INDEX.find((x) => x.date === date) || {};
 const latestCoach = () => INDEX.find((x) => x.date <= today() && x.coach)?.coach || null;
+const dataBase = () => `data/u/${ME.slug}`;
+
+// Load (or switch to) the chosen learner's lessons and local progress.
+async function loadUserData() {
+  S = loadState();
+  lessonCache.clear();
+  poolPromise = null;
+  [{ lessons: INDEX }, DECK] = await Promise.all([getJSON(`${dataBase()}/index.json`), getJSON(`${dataBase()}/vocab.json`)]);
+  for (const v of DECK) speech.addClips(v.audio);
+}
+
+const LEGACY_KEY = 'english-daily:v1'; // progress from before profiles: it belonged to the first learner
+
+async function chooseProfile(profile) {
+  ME = { slug: profile.slug, name: profile.name };
+  try {
+    localStorage.setItem(ME_KEY, JSON.stringify(ME));
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy && profile.slug === PROFILES[0]?.slug && !localStorage.getItem(storeKey())) {
+      localStorage.setItem(storeKey(), legacy);
+      localStorage.removeItem(LEGACY_KEY);
+    }
+  } catch { /* storage blocked */ }
+  await loadUserData();
+  location.hash = '#/';
+  await route();
+  syncNow().then((changed) => { if (changed) refreshIfIdle(); else paintSyncLine(); });
+}
 
 function reviewQueue() {
   const t = today();
@@ -1357,7 +1398,7 @@ function syncGroup() {
       go.textContent = '連線中…';
       try {
         const login = await sync.whoAmI(token);
-        const gistId = await sync.findOrCreateGist(token, core.syncDoc(S));
+        const gistId = await sync.findOrCreateGist(token, sync.fileFor(ME.slug), core.syncDoc(S));
         sync.saveConfig({ token, gistId, login });
         await syncNow({ manual: true });
         toast('已連線，作答紀錄開始同步。');
@@ -1381,6 +1422,22 @@ function syncGroup() {
     input,
     go,
     h('small', { class: 'muted' }, 'token 只存在這個瀏覽器，只能讀寫你的 gist，碰不到你的 repo。紀錄存在一個不公開的 gist 裡。')));
+}
+
+function profileGroup() {
+  return h('div', { class: 'group' }, h('div', { class: 'setting' },
+    h('span', {}, h('strong', {}, `目前使用者：${ME.name}`),
+      h('small', {}, '這台裝置顯示的是這個人的課程和進度。家人共用裝置時可以切換。')),
+    h('div', { class: 'row' }, h('button', {
+      class: 'btn', type: 'button',
+      onclick: async () => {
+        if (dirty) await syncNow();
+        ME = null;
+        try { localStorage.removeItem(ME_KEY); } catch { /* storage blocked */ }
+        location.hash = '#/';
+        route();
+      },
+    }, '切換使用者'))));
 }
 
 function settingsPage() {
@@ -1424,6 +1481,7 @@ function settingsPage() {
   return h('div', { class: 'page' },
     h('p', { class: 'eyebrow' }, '設定・Settings'),
     h('h1', { class: 'headline' }, '設定'),
+    profileGroup(),
     syncGroup(),
     h('div', { class: 'group' },
       h('label', { class: 'setting' }, h('span', {}, h('strong', {}, '安靜模式'), h('small', {}, '在外面不方便說話時開啟：口說題改成默念或打字，記到「口說待補」。')), quiet),
@@ -1466,6 +1524,24 @@ function updateBadge() {
   badge.hidden = n === 0;
 }
 
+function profilePage() {
+  return h('div', { class: 'page signin' },
+    h('p', { class: 'eyebrow' }, 'English Daily'),
+    h('h1', { class: 'headline' }, '你是誰？'),
+    h('p', { class: 'lede' }, '選一次就好，這台裝置之後會記得。每個人有自己的課程和進度。'),
+    h('div', { class: 'profiles' }, PROFILES.map((p) => h('button', {
+      class: 'profile', type: 'button', onclick: () => chooseProfile(p),
+    }, h('span', { class: 'avatar' }, p.name.slice(0, 1).toUpperCase()), h('span', {}, p.name)))));
+}
+
+function welcomePage() {
+  return h('div', { class: 'page' },
+    h('p', { class: 'eyebrow' }, `歡迎，${ME.name}`),
+    h('h1', { class: 'headline' }, '你的第一課正在準備中'),
+    h('p', { class: 'lede' }, '每天早上 6 點多會依你的程度產生一課，明天打開這裡就能開始；之後會依你的作答自動調整難度和加強弱點。'),
+    h('p', { class: 'sync-line', id: 'sync-line' }));
+}
+
 function errorBox(err) {
   return h('div', { class: 'page' }, h('h1', { class: 'title' }, '出了點問題'), h('p', { class: 'muted' }, err.message),
     h('a', { class: 'btn', href: '#/' }, '回到今日'));
@@ -1475,12 +1551,15 @@ async function route() {
   if (updateReady) { location.reload(); return; }
   speech.stop();
   hideSheet();
+  document.body.classList.toggle('signed-out', !ME);
+  if (!ME) { put($('#view'), profilePage()); window.scrollTo(0, 0); return; }
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const view = $('#view');
   let tab = 'home';
   try {
     let page;
-    if (!parts.length) page = await homePage(currentLessonDate());
+    if (!INDEX.length && !['settings', 'review', 'progress'].includes(parts[0])) page = welcomePage();
+    else if (!parts.length) page = await homePage(currentLessonDate());
     else if (parts[0] === 'l' && parts.length === 2) page = await homePage(parts[1]);
     else if (parts[0] === 'l' && parts[2] === 'challenge') page = await challengePage(parts[1]);
     else if (parts[0] === 'l' && parts.length === 3) page = await sectionPage(parts[1], parts[2]);
@@ -1508,8 +1587,9 @@ async function boot() {
   });
   paintQuiet();
   try {
-    [{ lessons: INDEX }, DECK] = await Promise.all([getJSON('data/index.json'), getJSON('data/vocab.json')]);
-    for (const v of DECK) speech.addClips(v.audio);
+    PROFILES = await getJSON('data/users.json');
+    if (ME && !PROFILES.some((p) => p.slug === ME.slug)) ME = null;
+    if (ME) await loadUserData();
   } catch (err) {
     put($('#view'), errorBox(err));
     return;
