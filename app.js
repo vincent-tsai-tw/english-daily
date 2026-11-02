@@ -2,9 +2,9 @@
 // prebuilt JSON. Learner progress lives in localStorage under STORE_KEY and, once connected,
 // syncs to a secret gist (sync.js) that the daily lesson generator reads to adapt each lesson.
 
-import * as core from './core.js?v=6569ab62fd';
-import * as speech from './speech.js?v=6569ab62fd';
-import * as sync from './sync.js?v=6569ab62fd';
+import * as core from './core.js?v=b30c6574d8';
+import * as speech from './speech.js?v=b30c6574d8';
+import * as sync from './sync.js?v=b30c6574d8';
 
 const STORE_KEY = 'english-daily:v1';
 const SYNC_DELAY_MS = 4000;
@@ -1269,12 +1269,18 @@ function syncGroup() {
         route();
       },
     }, '立即同步');
+    const share = h('button', {
+      class: 'btn', type: 'button',
+      onclick: () => copyText(cfg.token, '已複製。到另一台裝置的「設定 → 跨裝置同步」貼上，按「連線」。'),
+    }, '複製 token 給另一台裝置');
     const status = cfg.error ? `上次同步失敗：${cfg.error}` : cfg.last ? `上次同步：${formatTime(cfg.last)}` : '還沒同步過';
     return h('div', { class: 'group' }, h('div', { class: 'setting' },
       h('span', {}, h('strong', {}, '跨裝置同步：已連線'),
         h('small', {}, `GitHub 帳號 ${cfg.login}。作答紀錄會自動同步到你的私人 gist，每天出題也會依這些紀錄調整。`)),
       h('p', { class: cfg.error ? 'sync-status bad' : 'sync-status' }, status),
-      h('div', { class: 'row' }, syncBtn, off)));
+      h('div', { class: 'row' }, syncBtn, off),
+      share,
+      h('small', { class: 'muted' }, 'Mac 和 iPhone 登入同一個 Apple ID 時，在這裡複製後可以直接到另一台貼上（通用剪貼板）。')));
   }
   const input = h('input', { class: 'field', type: 'password', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: '貼上 ghp_ 開頭的 token' });
   const go = h('button', {
@@ -1305,7 +1311,7 @@ function syncGroup() {
       h('li', {}, '按「建立 token」：會開 GitHub 網頁，已經幫你勾好 gist 權限。'),
       h('li', {}, 'Expiration 選「No expiration」，拉到最下面按「Generate token」。'),
       h('li', {}, '複製 ghp_ 開頭的那串字，回到這裡貼上，按「連線」。'),
-      h('li', {}, '另一台裝置貼同一個 token 就會同步。')),
+      h('li', {}, '另一台裝置：在已連線的裝置按「複製 token 給另一台裝置」，到這裡貼上就好，不用再建立。')),
     h('a', { class: 'btn', href: sync.TOKEN_URL, target: '_blank', rel: 'noopener' }, '建立 token'),
     input,
     go,
