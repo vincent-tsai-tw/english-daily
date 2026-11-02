@@ -1,5 +1,6 @@
-// Browser text-to-speech (listening) and speech recognition (speaking). Both are optional:
-// callers check ttsSupported() / sttSupported() and fall back to text when missing.
+// Listening and speaking. Sentences with a pre-recorded neural-voice clip (registered with
+// addClips) play that file; anything else uses the browser's text-to-speech. Speech recognition
+// is optional: callers check sttSupported() and fall back to typing.
 
 const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
 const Recognition = typeof window !== 'undefined'
@@ -9,6 +10,36 @@ const Recognition = typeof window !== 'undefined'
 const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|eddy|flo|fred|good news|grandma|grandpa|hysterical|jester|junior|kathy|organ|pipe|ralph|reed|rocko|sandy|shelley|superstar|trinoids|whisper|wobble|zarvox/i;
 
 export const ttsSupported = () => Boolean(synth);
+
+const clips = new Map();
+const clipKey = (text) => String(text).trim();
+
+// Register {text: url} clips; later registrations win.
+export function addClips(map) {
+  for (const [text, url] of Object.entries(map || {})) if (url) clips.set(clipKey(text), url);
+}
+
+export const hasClip = (text) => clips.has(clipKey(text));
+export const canSpeak = (text) => hasClip(text) || ttsSupported();
+
+// One shared element: iOS only lets an element play without a tap after it has played once.
+let player = null;
+
+function playClip(url, rate) {
+  return new Promise((resolve) => {
+    player ||= new Audio();
+    const a = player;
+    const finish = (ok) => { a.onended = a.onerror = a.onpause = null; resolve(ok); };
+    a.onended = () => finish(true);
+    a.onpause = () => finish(true);
+    a.onerror = () => finish(false);
+    a.src = url;
+    a.defaultPlaybackRate = rate;
+    a.playbackRate = rate;
+    a.preservesPitch = true;
+    a.play().catch(() => finish(false));
+  });
+}
 export const sttSupported = () => Boolean(Recognition);
 
 function rank(v) {
@@ -51,6 +82,7 @@ let generation = 0;
 export function stop() {
   generation += 1;
   synth?.cancel();
+  if (player && !player.paused) player.pause();
 }
 
 // Short utterances avoid Chrome's habit of cutting speech off after ~15 seconds.
@@ -74,33 +106,46 @@ function utter(text, { voice, rate, pitch }) {
   });
 }
 
-// Speak `text`; resolves when finished or when stop() is called.
-export async function say(text, { voice = null, rate = 1, pitch = 1 } = {}) {
-  if (!synth) return;
-  stop();
-  const mine = generation;
+async function speakOne(text, { voice, rate, pitch }, mine) {
+  const url = clips.get(clipKey(text));
+  // A failed clip (e.g. offline and not cached) falls back to the browser's voice.
+  if (url && (await playClip(url, rate))) return;
+  if (!synth || mine !== generation) return;
   for (const part of sentences(text)) {
     if (mine !== generation) return;
     await utter(part, { voice, rate, pitch });
   }
 }
 
+// Speak `text`; resolves when finished or when stop() is called.
+export async function say(text, { voice = null, rate = 1, pitch = 1 } = {}) {
+  stop();
+  await speakOne(text, { voice, rate, pitch }, generation);
+}
+
+// Speak several texts in a row (e.g. the paragraphs of a reading).
+export async function sayAll(texts, opts = {}) {
+  stop();
+  const mine = generation;
+  for (const text of texts) {
+    if (mine !== generation) return;
+    await speakOne(text, { voice: null, rate: 1, pitch: 1, ...opts }, mine);
+  }
+}
+
 // Play a dialogue; onLine(i) fires as each line starts so the transcript can highlight it.
+// Lines with an `audio` clip play it; the others use voices[0] / voices[1] for speakers A / B.
 export async function sayLines(lines, { voices, rate = 1, onLine } = {}) {
-  if (!synth) return;
   stop();
   const mine = generation;
   const [a, b] = voices || [];
   for (let i = 0; i < lines.length; i++) {
     if (mine !== generation) return;
     onLine?.(i);
-    const isB = lines[i].speaker === 'B';
-    const voice = isB ? b || a : a;
-    const pitch = isB && !b ? 0.8 : 1;
-    for (const part of sentences(lines[i].text)) {
-      if (mine !== generation) return;
-      await utter(part, { voice, rate, pitch });
-    }
+    const line = lines[i];
+    const isB = line.speaker === 'B';
+    if (line.audio) clips.set(clipKey(line.text), line.audio);
+    await speakOne(line.text, { voice: isB ? b || a : a, rate, pitch: isB && !b ? 0.8 : 1 }, mine);
     await new Promise((r) => setTimeout(r, 250));
   }
   if (mine === generation) onLine?.(-1);

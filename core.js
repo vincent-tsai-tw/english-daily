@@ -168,3 +168,111 @@ export function gradingPrompt({ level, task, mustUse, text }) {
     '"""',
   ].join('\n');
 }
+
+// --- Progress state, migration and cross-device merge ---------------------------------------
+
+// Fields that sync between devices. Settings and the sync token stay on each device.
+export const SYNCED = ['done', 'answers', 'results', 'srs', 'mistakes', 'pending', 'activity', 'reviewLog', 'practice'];
+export const STATE_VERSION = 2;
+
+const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const stamped = (x) => isObj(x) && 'v' in x && 't' in x;
+
+// Upgrade a stored state from any earlier shape. Version 1 stored plain answers, `true` for done
+// sections, and arrays of mistakes and pending speaking items; version 2 timestamps everything so
+// devices can merge.
+export function migrateState(raw) {
+  const s = isObj(raw) ? { ...raw } : {};
+  for (const key of SYNCED) if (!isObj(s[key])) s[key] = {};
+  for (const [date, items] of Object.entries(s.answers)) {
+    s.answers[date] = Object.fromEntries(Object.entries(items || {}).map(([k, v]) => [k, stamped(v) ? v : { v, t: 0 }]));
+  }
+  for (const [date, secs] of Object.entries(s.done)) {
+    s.done[date] = Object.fromEntries(Object.entries(secs || {}).map(([k, v]) => [k, typeof v === 'number' ? v : 1]));
+  }
+  if (Array.isArray(raw?.mistakes)) {
+    s.mistakes = Object.fromEntries(raw.mistakes.map((m) => [`${m.date}|${m.kind}|${m.i}`, { ...m, t: 0, fixed: false }]));
+  }
+  if (Array.isArray(raw?.pendingSpeak)) {
+    for (const id of raw.pendingSpeak) s.pending[id] = { t: 0, done: false };
+  }
+  delete s.pendingSpeak;
+  for (const [word, card] of Object.entries(s.srs)) if (isObj(card) && !('t' in card)) s.srs[word] = { ...card, t: 0 };
+  s.v = STATE_VERSION;
+  return s;
+}
+
+export function syncDoc(state) {
+  const doc = { v: STATE_VERSION };
+  for (const key of SYNCED) doc[key] = state[key] || {};
+  return doc;
+}
+
+const newer = (a, b) => ((b?.t || 0) > (a?.t || 0) ? b : a);
+
+function mergeMap(a, b, pick) {
+  const out = { ...(a || {}) };
+  for (const [k, v] of Object.entries(b || {})) out[k] = k in out ? pick(out[k], v) : v;
+  return out;
+}
+const mergeNested = (a, b, pick) => mergeMap(a, b, (x, y) => mergeMap(x, y, pick));
+
+// Merge two synced documents. Every entry carries a timestamp and the newer one wins, so the
+// result does not depend on which device merges first.
+export function mergeDocs(a, b) {
+  return {
+    v: STATE_VERSION,
+    done: mergeNested(a.done, b.done, (x, y) => Math.max(x, y)),
+    answers: mergeNested(a.answers, b.answers, newer),
+    results: mergeNested(a.results, b.results, newer),
+    srs: mergeMap(a.srs, b.srs, newer),
+    mistakes: mergeMap(a.mistakes, b.mistakes, newer),
+    pending: mergeMap(a.pending, b.pending, newer),
+    activity: mergeMap(a.activity, b.activity, (x, y) => x || y),
+    reviewLog: mergeMap(a.reviewLog, b.reviewLog, (x, y) => ({
+      reviewed: Math.max(x.reviewed || 0, y.reviewed || 0),
+      introduced: Math.max(x.introduced || 0, y.introduced || 0),
+    })),
+    practice: mergeNested(a.practice, b.practice, (x, y) => (y[1] > x[1] ? y : x)),
+  };
+}
+
+// JSON with sorted keys, so two documents with the same content compare equal.
+export function stableStringify(x) {
+  if (Array.isArray(x)) return `[${x.map(stableStringify).join(',')}]`;
+  if (isObj(x)) return `{${Object.keys(x).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(x[k])}`).join(',')}}`;
+  return JSON.stringify(x);
+}
+
+export const sameDoc = (a, b) => stableStringify(a) === stableStringify(b);
+
+// --- Skill statistics (same prefixes as scripts/progress.py SKILLS) ---------------------------
+
+export const SKILLS = {
+  reading: ['read'], listening: ['listen', 'dict'], grammar: ['grammar', 'review'], speaking: ['shadow'], writing: ['trans', 'write'],
+};
+export const SKILL_ZH = { reading: '閱讀', listening: '聽力', grammar: '文法', speaking: '口說', writing: '寫作' };
+
+export function skillOf(key) {
+  const prefix = String(key).split('.')[0];
+  return Object.keys(SKILLS).find((s) => SKILLS[s].includes(prefix)) || null;
+}
+
+// Mean score and attempt count per skill over the most recent `window` lessons with answers.
+export function skillStats(results, window = 7) {
+  const dates = Object.keys(results || {})
+    .filter((d) => Object.keys(results[d]).some((k) => skillOf(k)))
+    .sort()
+    .slice(-window);
+  const acc = Object.fromEntries(Object.keys(SKILLS).map((s) => [s, []]));
+  for (const d of dates) {
+    for (const [k, r] of Object.entries(results[d])) {
+      const s = skillOf(k);
+      if (s && typeof r?.s === 'number') acc[s].push(r.s);
+    }
+  }
+  const stats = Object.fromEntries(Object.entries(acc).map(([s, v]) => [s, {
+    acc: v.length ? v.reduce((x, y) => x + y, 0) / v.length : null, n: v.length,
+  }]));
+  return { lessons: dates.length, stats };
+}

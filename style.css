@@ -299,3 +299,43 @@ select.field { appearance: auto; }
   bottom: calc(var(--tabs-h) + env(safe-area-inset-bottom, 0px) + 16px); background: var(--text); color: var(--bg);
   border-radius: 12px; padding: 10px 16px; font-size: 15px; box-shadow: var(--shadow);
 }
+
+/* Levels, coaching and challenge */
+.level {
+  display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--fill); color: var(--text-2); vertical-align: 1px;
+}
+.level.up { background: var(--ok-tint); color: var(--ok); }
+.level.down { background: var(--bad-tint); color: var(--bad); }
+.coach { background: var(--accent-tint); }
+.coach-head { font-weight: 600; font-size: 15px; color: var(--accent); }
+.coach ul, .plain { margin: 0; padding-left: 1.2em; font-size: 15px; }
+.coach li + li, .plain li + li { margin-top: 6px; }
+.challenge { display: flex; flex-direction: column; gap: 4px; color: var(--text); margin-top: 20px !important; }
+.challenge strong { display: inline-flex; align-items: center; gap: 6px; color: var(--link); }
+.challenge.locked strong { color: var(--text-3); }
+.challenge.done strong { color: var(--ok); }
+
+/* Progress */
+.bars { display: grid; gap: 10px; }
+.bar-row { display: grid; grid-template-columns: 2.6em 1fr 3em 3.4em; align-items: center; gap: 10px; font-size: 15px; }
+.bar { height: 10px; border-radius: 5px; background: var(--fill); overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: 5px; background: var(--accent); }
+.bar-row.weak .bar-fill { background: var(--bad); }
+.bar-row.weak .bar-label { color: var(--bad); font-weight: 600; }
+.bar-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+.bar-n { color: var(--text-3); font-size: 12px; }
+
+/* Practice */
+.seg.wide { display: flex; }
+.seg.wide a { flex: 1; text-align: center; border-radius: 8px; padding: 7px 4px; font-size: 15px; color: var(--text-2); }
+.seg.wide a.on { background: var(--raised); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); font-weight: 500; }
+.practice { min-height: 180px; }
+
+/* Settings: sync */
+.steps { margin: 0; padding-left: 1.3em; font-size: 15px; color: var(--text-2); }
+.steps li + li { margin-top: 4px; }
+.setting > .btn, .setting > .field { justify-self: start; }
+.setting > .field { justify-self: stretch; }
+.sync-status { font-size: 14px; color: var(--ok); }
+.sync-status.bad { color: var(--bad); }
