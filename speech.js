@@ -3,9 +3,8 @@
 // is optional: callers check sttSupported() and fall back to typing.
 
 const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined;
-const Recognition = typeof window !== 'undefined'
-  ? window.SpeechRecognition || window.webkitSpeechRecognition
-  : undefined;
+// Looked up on use (not at load) so tests can substitute a recogniser.
+const recognition = () => (typeof window !== 'undefined' ? window.SpeechRecognition || window.webkitSpeechRecognition : undefined);
 
 const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|eddy|flo|fred|good news|grandma|grandpa|hysterical|jester|junior|kathy|organ|pipe|ralph|reed|rocko|sandy|shelley|superstar|trinoids|whisper|wobble|zarvox/i;
 
@@ -40,7 +39,7 @@ function playClip(url, rate) {
     a.play().catch(() => finish(false));
   });
 }
-export const sttSupported = () => Boolean(Recognition);
+export const sttSupported = () => Boolean(recognition());
 
 function rank(v) {
   let score = 0;
@@ -158,26 +157,87 @@ const STT_ERRORS = {
   'audio-capture': '找不到麥克風。',
 };
 
-// Start recognising English speech. Returns { done, stop }: `done` resolves with the final
-// transcript when recognition ends, or rejects with a readable Chinese message.
+// How long recognition may run. Some browsers (notably iPhone Safari) sometimes never fire
+// `end`, so listening always finishes on a timer as well.
+const NO_SPEECH_MS = 8000; // nothing heard at all
+const SILENCE_MS = { short: 2500, long: 4000 }; // quiet after speech: a sentence / an answer
+const MAX_MS = { short: 20000, long: 90000 };
+const STOP_GRACE_MS = 1500; // after the learner taps stop, wait this long for the browser
+
+let activeRec = null;
+
+// Free the audio channel before the microphone starts: on iPhone a clip that just played can
+// keep the audio session in playback mode and the recogniser then hears nothing.
+function releasePlayer() {
+  if (!player) return;
+  player.pause();
+  player.removeAttribute('src');
+  player.load();
+}
+
+// Start recognising English speech. Returns { done, stop }: `done` resolves with the transcript
+// (possibly empty) or rejects with a readable Chinese message; it always settles.
 export function listen({ continuous = false, onText } = {}) {
-  const rec = new Recognition();
+  const Rec = recognition();
+  if (activeRec) {
+    try { activeRec.abort(); } catch { /* already stopped */ }
+    activeRec = null;
+  }
+  stop();
+  releasePlayer();
+  const kind = continuous ? 'long' : 'short';
+  const rec = new Rec();
   rec.lang = 'en-US';
   rec.interimResults = true;
   rec.continuous = continuous;
   let text = '';
-  const done = new Promise((resolve, reject) => {
-    rec.onresult = (e) => {
-      // Rebuild from every result: Safari and Chrome report continuous results differently.
-      text = Array.from(e.results, (r) => r[0].transcript).join(' ').replace(/\s+/g, ' ').trim();
-      onText?.(text);
-    };
-    rec.onerror = (e) => {
-      if (e.error !== 'no-speech' && e.error !== 'aborted') reject(new Error(STT_ERRORS[e.error] || `語音辨識錯誤：${e.error}`));
-    };
-    rec.onend = () => resolve(text);
-  });
-  stop();
-  rec.start();
-  return { done, stop: () => rec.stop() };
+  let heard = false;
+  let finished = false;
+  let quietTimer;
+  let graceTimer;
+  let settle;
+  const done = new Promise((resolve, reject) => { settle = (err) => (err ? reject(err) : resolve(text)); });
+  const capTimer = setTimeout(() => finish(), MAX_MS[kind]);
+  function finish(err) {
+    if (finished) return;
+    finished = true;
+    clearTimeout(quietTimer);
+    clearTimeout(graceTimer);
+    clearTimeout(capTimer);
+    if (activeRec === rec) activeRec = null;
+    try { rec.abort(); } catch { /* already stopped */ }
+    settle(err);
+  }
+  const armQuiet = () => {
+    clearTimeout(quietTimer);
+    quietTimer = setTimeout(() => finish(), heard ? SILENCE_MS[kind] : NO_SPEECH_MS);
+  };
+  rec.onresult = (e) => {
+    // Rebuild from every result: Safari and Chrome report continuous results differently.
+    text = Array.from(e.results, (r) => r[0].transcript).join(' ').replace(/\s+/g, ' ').trim();
+    if (text) heard = true;
+    onText?.(text);
+    armQuiet();
+  };
+  rec.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'aborted') finish();
+    else finish(new Error(STT_ERRORS[e.error] || `語音辨識錯誤：${e.error}`));
+  };
+  rec.onend = () => finish();
+  try {
+    rec.start();
+  } catch {
+    finish(new Error('麥克風啟動失敗，請再按一次。'));
+    return { done, stop: () => {} };
+  }
+  activeRec = rec;
+  armQuiet();
+  return {
+    done,
+    stop: () => {
+      try { rec.stop(); } catch { /* already stopped */ }
+      clearTimeout(graceTimer);
+      graceTimer = setTimeout(() => finish(), STOP_GRACE_MS);
+    },
+  };
 }

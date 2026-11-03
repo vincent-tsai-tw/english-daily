@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=83cc64a8cf';
-import * as speech from './speech.js?v=83cc64a8cf';
-import * as sync from './sync.js?v=83cc64a8cf';
+import * as core from './core.js?v=e4aa75345d';
+import * as speech from './speech.js?v=e4aa75345d';
+import * as sync from './sync.js?v=e4aa75345d';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -441,7 +441,7 @@ function micButton({ continuous = false, label, onText, onDone }) {
   const btn = h('button', { class: 'btn mic', type: 'button' });
   let session = null;
   const paint = () => {
-    put(btn, icon(session ? 'stop' : 'mic'), session ? (continuous ? '說完了' : '聆聽中…') : label);
+    put(btn, icon(session ? 'stop' : 'mic'), session ? (continuous ? '說完了' : '聆聽中・按此結束') : label);
     btn.classList.toggle('on', Boolean(session));
   };
   btn.addEventListener('click', async () => {
@@ -569,10 +569,11 @@ function questionList(L, kind, items) {
 
 // --- Shared blocks --------------------------------------------------------------------------
 
-function readingBlock(L, reading, items, kind) {
+function readingBlock(L, reading, items, kind, accent) {
   return [
     h('div', { class: 'toolbar' }, playButton('朗讀全文', () => speech.sayAll(reading.paragraphs, ttsOpts()),
       speech.ttsSupported() || reading.paragraphs.every(speech.hasClip)), rateToggle()),
+    accent ? h('p', { class: 'hint' }, `朗讀：${accent}口音`) : null,
     h('div', { class: 'reading' }, reading.paragraphs.map((p) => h('p', {}, highlight(p, items)))),
     h('p', { class: 'hint' }, '藍色底線是新的字，灰色虛線是以前學過的字，點一下看解釋。'),
     h('h2', { class: 'section-title' }, '閱讀理解'),
@@ -618,11 +619,13 @@ function listeningBlock(L, data, prefix) {
     },
   }, '顯示對話稿');
   const mark = (i) => transcript.querySelectorAll('.line').forEach((el, k) => el.classList.toggle('playing', k === i));
+  const names = { A: lines.find((l) => l.speaker === 'A')?.name, B: lines.find((l) => l.speaker === 'B')?.name };
   return [
     h('div', { class: 'toolbar' },
       playButton('播放對話', () => speech.sayLines(lines, { voices: voices(), rate: S.settings.rate, onLine: mark }),
         speech.ttsSupported() || lines.every((l) => l.audio)),
       rateToggle(), showBtn),
+    data.accents ? h('p', { class: 'hint' }, `口音：${names.A} ${data.accents.A}・${names.B} ${data.accents.B}`) : null,
     transcript,
     h('h2', { class: 'section-title' }, '聽力理解'),
     questionList(L, `${prefix}listen`, data.questions),
@@ -659,7 +662,7 @@ function vocabSection(L) {
 }
 
 function readSection(L) {
-  return [h('h1', { class: 'title' }, L.reading.title), readingBlock(L, L.reading, vocabItems(L), 'read')];
+  return [h('h1', { class: 'title' }, L.reading.title), readingBlock(L, L.reading, vocabItems(L), 'read', L.accents?.narrator)];
 }
 
 function grammarSection(L) {
@@ -999,7 +1002,7 @@ async function challengePage(date) {
     h('p', { class: 'eyebrow' }, `挑戰加練・${C.level}`),
     h('h1', { class: 'title' }, C.reading.title),
     h('p', { class: 'lede' }, '比今天的課高一級：文章更長、對話更快更口語。這裡的答對率也會用來判斷什麼時候升級。'),
-    readingBlock(L, C.reading, items, 'ch.read'),
+    readingBlock(L, C.reading, items, 'ch.read', L.accents?.challenge_narrator),
     h('h2', { class: 'section-title' }, `聽力：${C.listening.title}`),
     listeningBlock(L, C.listening, 'ch.'),
     h('div', { class: 'finish' },
