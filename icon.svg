@@ -1,1 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180"><rect width="180" height="180" rx="40" fill="#0071e3"/><text x="90" y="120" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="96" font-weight="700" fill="#fff">E</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2b8cff"/>
+      <stop offset="1" stop-color="#6a5cff"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d6fe6"/>
+      <stop offset="1" stop-color="#5b4ee0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <circle cx="800" cy="236" r="150" fill="#ffffff" fill-opacity="0.12"/>
+  <circle cx="190" cy="860" r="110" fill="#ffffff" fill-opacity="0.10"/>
+  <path d="M232 268c0-44 36-80 80-80h400c44 0 80 36 80 80v312c0 44-36 80-80 80H468l-118 112c-16 15-42 4-42-18v-94c-44 0-76-36-76-80z" fill="#ffffff"/>
+  <text x="512" y="552" text-anchor="middle" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-weight="700" font-size="300" fill="url(#ink)" letter-spacing="-10">Aa</text>
+  <rect x="612" y="700" width="200" height="34" rx="17" fill="#ffffff" fill-opacity="0.9"/>
+  <rect x="612" y="760" width="130" height="34" rx="17" fill="#ffffff" fill-opacity="0.7"/>
+</svg>
