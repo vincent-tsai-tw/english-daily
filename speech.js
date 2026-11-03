@@ -150,6 +150,58 @@ export async function sayLines(lines, { voices, rate = 1, onLine } = {}) {
   if (mine === generation) onLine?.(-1);
 }
 
+// --- Recording yourself (shadowing) ----------------------------------------------------------
+
+const RECORD_MAX_MS = 20000;
+const RECORD_TYPES = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+
+export const recordingSupported = () => typeof MediaRecorder !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+
+// Record from the microphone until stop() or RECORD_MAX_MS. `done` resolves with an object URL
+// of the recording (null if nothing was captured) or rejects with a readable Chinese message.
+export async function record() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    throw new Error('無法使用麥克風：請在瀏覽器設定允許這個網站使用麥克風。');
+  }
+  stop();
+  releasePlayer();
+  const type = RECORD_TYPES.find((t) => MediaRecorder.isTypeSupported?.(t));
+  const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  const done = new Promise((resolve, reject) => {
+    rec.onerror = () => reject(new Error('錄音失敗，請再試一次。'));
+    rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      resolve(chunks.length ? URL.createObjectURL(new Blob(chunks, { type: rec.mimeType })) : null);
+    };
+  });
+  rec.start();
+  const cap = setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, RECORD_MAX_MS);
+  return { done, stop: () => { clearTimeout(cap); if (rec.state === 'recording') rec.stop(); } };
+}
+
+// Play a recording the learner made (an object URL from record()).
+export function playRecording(url) {
+  stop();
+  const mine = generation;
+  return new Promise((resolve) => {
+    player ||= new Audio();
+    const a = player;
+    const finish = () => { a.onended = a.onerror = a.onpause = null; resolve(mine === generation); };
+    a.onended = finish;
+    a.onpause = finish;
+    a.onerror = finish;
+    a.src = url;
+    a.defaultPlaybackRate = 1;
+    a.playbackRate = 1;
+    a.play().catch(finish);
+  });
+}
+
 const STT_ERRORS = {
   'not-allowed': '麥克風權限被拒絕。請在瀏覽器設定允許這個網站使用麥克風。',
   'service-not-allowed': '無法使用語音辨識。iPhone 請到「設定 → 一般 → 鍵盤」開啟「聽寫」。',

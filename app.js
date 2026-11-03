@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=35b6dafe48';
-import * as speech from './speech.js?v=35b6dafe48';
-import * as sync from './sync.js?v=35b6dafe48';
+import * as core from './core.js?v=cdbded4709';
+import * as speech from './speech.js?v=cdbded4709';
+import * as sync from './sync.js?v=cdbded4709';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -747,7 +747,42 @@ function shadowItem(L, i, sentence) {
   return h('div', { class: 'card' },
     h('p', { class: 'shadow-text' }, sentence),
     h('div', { class: 'row' }, sayBtn(sentence, '聽'), slowBtn(sentence), action),
+    recordRow(sentence),
     live, result);
+}
+
+// Record yourself reading the sentence, then listen to yourself and the original in turn.
+function recordRow(sentence) {
+  if (!speech.recordingSupported() || S.settings.quiet) return null;
+  let session = null;
+  let url = null;
+  const compare = h('div', { class: 'row' });
+  const btn = h('button', { class: 'btn', type: 'button' });
+  const paint = () => {
+    put(btn, icon(session ? 'stop' : 'mic'), session ? '錄音中・按此停止' : url ? '再錄一次' : '錄下自己的聲音');
+    btn.classList.toggle('on', Boolean(session));
+    put(compare, url ? [
+      h('button', { class: 'chip-btn', type: 'button', onclick: () => speech.playRecording(url) }, icon('play'), '聽自己'),
+      h('button', { class: 'chip-btn', type: 'button', onclick: () => speech.say(sentence, ttsOpts()) }, icon('speaker'), '聽原音'),
+      h('span', { class: 'muted' }, '輪流聽，比較語調和停頓。'),
+    ] : null);
+  };
+  btn.addEventListener('click', async () => {
+    if (session) { session.stop(); return; }
+    try {
+      session = await speech.record();
+      paint();
+      const got = await session.done;
+      if (got) { if (url) URL.revokeObjectURL(url); url = got; } else toast('沒有錄到聲音，再試一次。');
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      session = null;
+      paint();
+    }
+  });
+  paint();
+  return h('div', { class: 'stack' }, btn, compare);
 }
 
 function promptItem(L, i, p) {
