@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=e4aa75345d';
-import * as speech from './speech.js?v=e4aa75345d';
-import * as sync from './sync.js?v=e4aa75345d';
+import * as core from './core.js?v=6b4a4dec01';
+import * as speech from './speech.js?v=6b4a4dec01';
+import * as sync from './sync.js?v=6b4a4dec01';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -212,6 +212,26 @@ function refreshIfIdle() {
 // --- Data -----------------------------------------------------------------------------------
 
 let PROFILES = [];
+let CHANGELOG = [];
+const SEEN_KEY = 'english-daily:seen-release';
+
+const seenRelease = () => { try { return localStorage.getItem(SEEN_KEY) || ''; } catch { return ''; } };
+
+function paintBell() {
+  $('#bell .dot').hidden = !CHANGELOG.length || CHANGELOG[0].version === seenRelease();
+}
+
+// The bell: every release with what changed, newest first. Opening it marks everything read.
+function openUpdates() {
+  const seen = seenRelease();
+  showSheet(
+    h('p', { class: 'sheet-word' }, '最新更新'),
+    h('div', { class: 'releases' }, CHANGELOG.map((r) => h('section', { class: `release${r.version > seen ? ' new' : ''}` },
+      h('p', { class: 'release-date' }, formatDate(r.date), r.version > seen ? h('span', { class: 'tag' }, '新') : null),
+      h('ul', {}, r.items_zh.map((x) => h('li', {}, x)))))));
+  try { localStorage.setItem(SEEN_KEY, CHANGELOG[0]?.version || ''); } catch { /* storage blocked */ }
+  paintBell();
+}
 let INDEX = [];
 let DECK = [];
 const lessonCache = new Map();
@@ -948,6 +968,8 @@ async function homePage(date) {
     next
       ? h('a', { class: 'btn primary wide', href: `#/l/${date}/${next.id}` }, finished ? `繼續：${next.zh}` : '開始今天的課')
       : h('p', { class: 'done-note' }, icon('check'), '這一課全部完成了！'),
+    !S.profile?.t ? h('a', { class: 'card notice', href: '#/goals' },
+      h('strong', {}, '告訴老師你的目標和興趣'), h('span', { class: 'muted' }, '花 30 秒選一選，之後的課會更貼近你想用英文的地方。')) : null,
     pending.length ? h('a', { class: 'card notice', href: `#/l/${pending[0].split('|')[0]}/speak` },
       h('strong', {}, `口說待補 ${pending.length} 題`), h('span', { class: 'muted' }, '在外面時先默念或打字的題目，回家花幾分鐘用說的補完。')) : null,
     h('h2', { class: 'section-title' }, '今天的六節'),
@@ -1427,6 +1449,52 @@ function syncGroup() {
     h('small', { class: 'muted' }, 'token 只存在這個瀏覽器，只能讀寫你的 gist，碰不到你的 repo。紀錄存在一個不公開的 gist 裡。')));
 }
 
+const GOALS = ['職場溝通', '開會與簡報', '出國旅遊', '日常聊天', '看影集電影', '考試（多益等）', '閱讀新聞文章'];
+const INTERESTS = ['科技', '商業財經', '美食', '旅遊', '運動健身', '電影影集', '音樂', '家庭親子', '健康', '寵物', '藝術設計', '科學'];
+const MINUTES = [10, 20, 30, 45];
+
+// What the learner wants: shapes the themes, examples and length of their next lessons.
+function goalsPage() {
+  const p = S.profile || {};
+  const chosen = { goals: new Set(p.goals || []), interests: new Set(p.interests || []) };
+  let minutes = p.minutes || 30;
+  const chips = (key, options) => h('div', { class: 'chips pick' }, options.map((o) => {
+    const chip = h('button', {
+      type: 'button', class: `chip${chosen[key].has(o) ? ' on' : ''}`, 'aria-pressed': String(chosen[key].has(o)),
+      onclick: () => {
+        if (chosen[key].has(o)) chosen[key].delete(o); else chosen[key].add(o);
+        chip.classList.toggle('on', chosen[key].has(o));
+        chip.setAttribute('aria-pressed', String(chosen[key].has(o)));
+      },
+    }, o);
+    return chip;
+  }));
+  const timeSeg = h('div', { class: 'seg', role: 'group', 'aria-label': '每天練習時間' });
+  const paintTime = () => timeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.m) === minutes));
+  for (const m of MINUTES) timeSeg.append(h('button', { type: 'button', 'data-m': m, onclick: () => { minutes = m; paintTime(); } }, `${m} 分`));
+  paintTime();
+  const note = h('textarea', { class: 'field', rows: 3, placeholder: '例如：想練開會時打斷別人的說法、下個月要去日本旅遊、聽力最弱…' }, p.note || '');
+  const saveBtn = h('button', {
+    class: 'btn primary wide', type: 'button',
+    onclick: () => {
+      S.profile = { goals: [...chosen.goals], interests: [...chosen.interests], minutes, note: note.value.trim(), t: now() };
+      touch();
+      save();
+      toast('已儲存。明天早上的課會照你的目標和興趣出題。');
+      location.hash = '#/';
+    },
+  }, '儲存');
+  return h('div', { class: 'page' },
+    h('p', { class: 'eyebrow' }, '學習目標・Goals'),
+    h('h1', { class: 'headline' }, `${ME.name}，你想把英文用在哪裡？`),
+    h('p', { class: 'lede' }, '每天出題時會參考這裡：情境和例句會貼近你的目標與興趣，課程長度也會配合你的時間。隨時可以改。'),
+    h('h2', { class: 'section-title' }, '學習目標'), chips('goals', GOALS),
+    h('h2', { class: 'section-title' }, '興趣'), chips('interests', INTERESTS),
+    h('h2', { class: 'section-title' }, '每天大約有多少時間？'), timeSeg,
+    h('h2', { class: 'section-title' }, '還想告訴老師什麼？'), note,
+    h('div', { class: 'finish' }, saveBtn));
+}
+
 function profileGroup() {
   return h('div', { class: 'group' }, h('div', { class: 'setting' },
     h('span', {}, h('strong', {}, `目前使用者：${ME.name}`),
@@ -1440,7 +1508,7 @@ function profileGroup() {
         location.hash = '#/';
         route();
       },
-    }, '切換使用者'))));
+    }, '切換使用者'), h('a', { class: 'btn', href: '#/goals' }, '學習目標與興趣'))));
 }
 
 function settingsPage() {
@@ -1570,6 +1638,7 @@ async function route() {
     else if (parts[0] === 'practice') { tab = 'practice'; page = await practicePage(parts[1]); }
     else if (parts[0] === 'progress' || parts[0] === 'archive') { tab = 'progress'; page = progressPage(); }
     else if (parts[0] === 'settings') { tab = 'settings'; page = settingsPage(); }
+    else if (parts[0] === 'goals') { tab = 'settings'; page = goalsPage(); }
     else throw new Error('找不到這個頁面');
     if (parts[0] === 'l' && parts[1] !== currentLessonDate()) tab = 'progress';
     put(view, page);
@@ -1584,13 +1653,15 @@ async function route() {
 
 async function boot() {
   $('#quiet').addEventListener('click', () => setQuiet(!S.settings.quiet));
+  $('#bell').addEventListener('click', (e) => { e.stopPropagation(); openUpdates(); });
   document.addEventListener('click', (e) => {
     const sheet = $('#sheet');
     if (!sheet.hidden && !sheet.contains(e.target)) hideSheet();
   });
   paintQuiet();
   try {
-    PROFILES = await getJSON('data/users.json');
+    [PROFILES, CHANGELOG] = await Promise.all([getJSON('data/users.json'), getJSON('data/changelog.json').catch(() => [])]);
+    paintBell();
     if (ME && !PROFILES.some((p) => p.slug === ME.slug)) ME = null;
     if (ME) await loadUserData();
   } catch (err) {

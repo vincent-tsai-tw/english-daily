@@ -1,9 +1,9 @@
 // Network first, cache as fallback: always fresh online, still usable offline (e.g. on the MRT).
 // Requests revalidate with the server (cache: 'no-cache'), so GitHub Pages' 10-minute HTTP cache
 // never serves an outdated page after a new version is published.
-const CACHE = 'english-daily-e4aa75345d';
-const SHELL = ['./', 'index.html', 'style.css?v=e4aa75345d', 'app.js?v=e4aa75345d', 'core.js?v=e4aa75345d',
-  'speech.js?v=e4aa75345d', 'sync.js?v=e4aa75345d', 'data/users.json'];
+const CACHE = 'english-daily-6b4a4dec01';
+const SHELL = ['./', 'index.html', 'style.css?v=6b4a4dec01', 'app.js?v=6b4a4dec01', 'core.js?v=6b4a4dec01',
+  'speech.js?v=6b4a4dec01', 'sync.js?v=6b4a4dec01', 'data/users.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE)

@@ -13,14 +13,17 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=e4aa75345d">
-<script type="module" src="app.js?v=e4aa75345d"></script>
+<link rel="stylesheet" href="style.css?v=6b4a4dec01">
+<script type="module" src="app.js?v=6b4a4dec01"></script>
 </head>
 <body>
 <header class="top">
   <div class="top-inner">
     <a class="brand" href="#/">English Daily</a>
-    <button id="quiet" class="pill" type="button" aria-pressed="false" title="安靜模式：在外面不方便說話時開啟"></button>
+    <div class="top-actions">
+      <button id="bell" class="bell" type="button" aria-label="最新更新" title="最新更新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5a5.5 5.5 0 0 0-5.5 5.5v3.6L4.8 15.7a.8.8 0 0 0 .7 1.3h13a.8.8 0 0 0 .7-1.3l-1.7-3.1V9A5.5 5.5 0 0 0 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.8 19.5a2.3 2.3 0 0 0 4.4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span class="dot" hidden></span></button>
+      <button id="quiet" class="pill" type="button" aria-pressed="false" title="安靜模式：在外面不方便說話時開啟"></button>
+    </div>
   </div>
 </header>
 <main id="view" class="wrap"><p class="muted">載入中…</p></main>

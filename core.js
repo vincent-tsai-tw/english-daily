@@ -172,7 +172,7 @@ export function gradingPrompt({ level, task, mustUse, text }) {
 // --- Progress state, migration and cross-device merge ---------------------------------------
 
 // Fields that sync between devices. Settings and the sync token stay on each device.
-export const SYNCED = ['done', 'answers', 'results', 'srs', 'mistakes', 'pending', 'activity', 'reviewLog', 'practice'];
+export const SYNCED = ['done', 'answers', 'results', 'srs', 'mistakes', 'pending', 'activity', 'reviewLog', 'practice', 'profile'];
 export const STATE_VERSION = 2;
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -234,6 +234,7 @@ export function mergeDocs(a, b) {
       introduced: Math.max(x.introduced || 0, y.introduced || 0),
     })),
     practice: mergeNested(a.practice, b.practice, (x, y) => (y[1] > x[1] ? y : x)),
+    profile: newer(a.profile || {}, b.profile || {}),
   };
 }
 
