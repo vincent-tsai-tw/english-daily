@@ -242,6 +242,9 @@ select.field { appearance: auto; }
 .chip { border: 1px solid var(--sep); border-radius: 999px; padding: 3px 11px; font-size: 14px; color: var(--text-2); background: var(--raised); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .chips.pick .chip { font-size: 15px; padding: 7px 14px; cursor: pointer; }
+.order-answer { min-height: 44px; padding: 8px; border: 1px dashed var(--sep); border-radius: 12px; align-items: center; }
+.chips .chip:disabled { cursor: default; }
+.sec-name .tag { margin-left: 8px; font-weight: 500; vertical-align: 2px; }
 .count { font-size: 14px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .count.ok { color: var(--ok); }
 .feedback { background: var(--bg-alt); border-radius: var(--radius); padding: 18px; }

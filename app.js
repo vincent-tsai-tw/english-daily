@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=6b4a4dec01';
-import * as speech from './speech.js?v=6b4a4dec01';
-import * as sync from './sync.js?v=6b4a4dec01';
+import * as core from './core.js?v=35b6dafe48';
+import * as speech from './speech.js?v=35b6dafe48';
+import * as sync from './sync.js?v=35b6dafe48';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -24,7 +24,8 @@ const SECTIONS = [
   { id: 'write', zh: '寫作', en: 'Writing', min: 6, sub: (L) => `中翻英 ${L.translation.length} 句＋短文寫作` },
 ];
 const MISTAKE_LABEL = { read: '閱讀', listen: '聽力', grammar: '文法', review: '文法複習', 'ch.read': '挑戰閱讀', 'ch.listen': '挑戰聽力' };
-const PRACTICE_MODES = [['dict', '聽寫'], ['shadow', '跟讀'], ['vocab', '單字'], ['grammar', '文法'], ['trans', '翻譯']];
+const PRACTICE_MODES = [['dict', '聽寫'], ['shadow', '跟讀'], ['vocab', '單字'], ['grammar', '文法'], ['order', '重組'], ['trans', '翻譯']];
+const ORDER_WORDS = [5, 12]; // sentence length (words) used for rebuilding
 const DEFAULT_SETTINGS = { quiet: false, rate: 1, voice: '', newPerDay: 10, reviewMode: 'recognize', practiceMode: 'dict' };
 
 const ICONS = {
@@ -945,12 +946,30 @@ function challengeCard(L, allDone) {
     h('strong', {}, icon('bolt'), `提早做完了？挑戰加練（${C.level}）`), h('span', { class: 'muted' }, `比今天高一級：${sub}`));
 }
 
+const SKILL_SECTION = { reading: 'read', listening: 'listen', grammar: 'grammar', speaking: 'speak', writing: 'write' };
+
+// The section to do first: the weakest skill from the coach notes, else from local scores.
+function suggestedSection(coach, done) {
+  let skill = coach?.weak_skill;
+  let reason = skill ? coach.focus_zh?.find((f) => f.includes(core.SKILL_ZH[skill])) : '';
+  if (!skill) {
+    const { stats } = core.skillStats(S.results);
+    const weak = Object.entries(stats).filter(([, v]) => v.n >= 4 && v.acc < 0.8).sort((a, b) => a[1].acc - b[1].acc)[0];
+    if (!weak) return null;
+    skill = weak[0];
+    reason = `最近${core.SKILL_ZH[skill]}的正確率 ${pct(weak[1].acc)}，先練最弱的最有效。`;
+  }
+  const section = SECTIONS.find((s) => s.id === SKILL_SECTION[skill]);
+  return section && !done[section.id] ? { section, reason } : null;
+}
+
 async function homePage(date) {
   const L = await lesson(date);
   const entry = entryFor(date);
   const done = S.done[date] || {};
   const finished = SECTIONS.filter((s) => done[s.id]).length;
-  const next = SECTIONS.find((s) => !done[s.id]);
+  const suggested = date === currentLessonDate() ? suggestedSection(entry.coach, done) : null;
+  const next = suggested?.section || SECTIONS.find((s) => !done[s.id]);
   const isCurrent = date === currentLessonDate();
   const notToday = isCurrent && date !== today();
   const queue = reviewQueue();
@@ -966,16 +985,18 @@ async function homePage(date) {
     h('p', { class: 'sync-line', id: 'sync-line' }),
     isCurrent ? coachCard(entry.coach) : null,
     next
-      ? h('a', { class: 'btn primary wide', href: `#/l/${date}/${next.id}` }, finished ? `繼續：${next.zh}` : '開始今天的課')
+      ? h('a', { class: 'btn primary wide', href: `#/l/${date}/${next.id}` }, suggested ? `先做：${next.zh}` : finished ? `繼續：${next.zh}` : '開始今天的課')
       : h('p', { class: 'done-note' }, icon('check'), '這一課全部完成了！'),
     !S.profile?.t ? h('a', { class: 'card notice', href: '#/goals' },
       h('strong', {}, '告訴老師你的目標和興趣'), h('span', { class: 'muted' }, '花 30 秒選一選，之後的課會更貼近你想用英文的地方。')) : null,
     pending.length ? h('a', { class: 'card notice', href: `#/l/${pending[0].split('|')[0]}/speak` },
       h('strong', {}, `口說待補 ${pending.length} 題`), h('span', { class: 'muted' }, '在外面時先默念或打字的題目，回家花幾分鐘用說的補完。')) : null,
+    suggested ? h('div', { class: 'card coach' }, h('p', { class: 'coach-head' }, `今天建議先做：${suggested.section.zh}`),
+      h('p', { class: 'muted' }, suggested.reason)) : null,
     h('h2', { class: 'section-title' }, '今天的六節'),
     h('ul', { class: 'section-list' }, SECTIONS.map((s) => h('li', {},
       h('a', { href: `#/l/${date}/${s.id}`, class: done[s.id] ? 'done' : '' },
-        h('span', { class: 'sec-name' }, s.zh, h('small', {}, s.en)),
+        h('span', { class: 'sec-name' }, s.zh, h('small', {}, s.en), s === suggested?.section ? h('span', { class: 'tag' }, '先做') : null),
         h('span', { class: 'sec-sub' }, s.sub(L)),
         h('span', { class: 'sec-meta' }, done[s.id] ? icon('check') : `${s.min} 分`))))),
     challengeCard(L, !next),
@@ -1276,6 +1297,37 @@ async function practicePage(requested) {
       const q = exercise(g, { get: () => value, set: (v) => { value = v; } }, (ok) => { counted(ok); nextBtn.hidden = false; });
       return { card: practiceCard([h('p', { class: 'muted' }, g.point_zh, weakPoints.has(g.point) ? '・常錯' : ''), q], nextBtn) };
     },
+    order: () => {
+      const s = pick(orderable);
+      const words = s.en.split(/\s+/);
+      let bank = words.map((w, i) => ({ w, i }));
+      for (let i = bank.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bank[i], bank[j]] = [bank[j], bank[i]]; }
+      if (bank.every((b, k) => b.i === k)) bank.reverse();
+      let chosen = [];
+      const nextBtn = nextButton(false);
+      const answer = h('div', { class: 'chips order-answer' });
+      const pool_ = h('div', { class: 'chips' });
+      const out = h('div');
+      let locked = false;
+      const paint = () => {
+        put(answer, chosen.length ? chosen.map((b) => h('button', { type: 'button', class: 'chip on', disabled: locked, onclick: () => { chosen = chosen.filter((x) => x !== b); bank.push(b); paint(); } }, b.w)) : h('span', { class: 'muted' }, '點下面的字，排成正確的句子'));
+        put(pool_, bank.map((b) => h('button', { type: 'button', class: 'chip', disabled: locked, onclick: () => { bank = bank.filter((x) => x !== b); chosen.push(b); paint(); } }, b.w)));
+      };
+      const check = () => {
+        if (locked || chosen.length !== words.length) { if (!locked) toast('還有字沒放進去。'); return; }
+        locked = true;
+        const ok = chosen.every((b, k) => b.i === k);
+        counted(ok);
+        checkBtn.hidden = true;
+        nextBtn.hidden = false;
+        put(out, h('p', { class: `explain ${ok ? 'ok' : 'bad'}` }, ok ? '正確！' : '順序不對。正確的是：'),
+          h('p', { class: 'example' }, s.en, ' ', sayBtn(s.en)), s.zh ? h('p', { class: 'zh-sub' }, s.zh) : null);
+        paint();
+      };
+      const checkBtn = h('button', { class: 'btn', type: 'button', onclick: check }, '檢查');
+      paint();
+      return { card: practiceCard([s.zh ? h('p', { class: 'zh-big' }, s.zh) : h('p', { class: 'muted' }, '把這些字排成一句話'), answer, pool_, out], [checkBtn, nextBtn]) };
+    },
     trans: () => {
       const t = pick(pool.translate);
       const nextBtn = nextButton(false);
@@ -1298,7 +1350,8 @@ async function practicePage(requested) {
     },
   };
 
-  const empty = { dict: pool.sentences, shadow: pool.sentences, vocab: deck, grammar: pool.grammar, trans: pool.translate }[mode];
+  const orderable = pool.sentences.filter((s) => { const n = s.en.split(/\s+/).length; return n >= ORDER_WORDS[0] && n <= ORDER_WORDS[1]; });
+  const empty = { dict: pool.sentences, shadow: pool.sentences, vocab: deck, grammar: pool.grammar, order: orderable, trans: pool.translate }[mode];
   function next(play) {
     speech.stop();
     if (!empty.length) { put(stage, h('p', { class: 'muted' }, '還沒有題目。')); return; }
