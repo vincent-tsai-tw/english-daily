@@ -5,6 +5,7 @@
 const API = 'https://api.github.com';
 export const GIST_DESCRIPTION = 'english-daily progress';
 export const fileFor = (slug) => `english-daily-progress-${slug}.json`; // as scripts/progress.py
+export const feedbackFor = (slug) => `english-daily-feedback-${slug}.json`; // written only by the grading job
 export const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=English%20Daily%20sync';
 const CONFIG_KEY = 'english-daily:sync';
 
@@ -67,18 +68,27 @@ export async function findOrCreateGist(token, file, initial) {
   return data.id;
 }
 
+// Read several files of the gist in one request: {file: document or null}.
+export async function readMany(token, id, files) {
+  const { data } = await api(token, `/gists/${id}`);
+  const out = {};
+  for (const file of files) {
+    const entry = data.files?.[file];
+    if (!entry) { out[file] = null; continue; }
+    let text = entry.content;
+    if (entry.truncated) {
+      const res = await fetch(entry.raw_url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`讀取同步資料失敗（${res.status}）。`);
+      text = await res.text();
+    }
+    try { out[file] = JSON.parse(text); } catch { throw new Error('同步資料格式錯誤。'); }
+  }
+  return out;
+}
+
 // Read one learner's synced document; null when the gist has no file for them yet.
 export async function read(token, id, file) {
-  const { data } = await api(token, `/gists/${id}`);
-  const entry = data.files?.[file];
-  if (!entry) return null;
-  let text = entry.content;
-  if (entry.truncated) {
-    const res = await fetch(entry.raw_url, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`讀取同步資料失敗（${res.status}）。`);
-    text = await res.text();
-  }
-  try { return JSON.parse(text); } catch { throw new Error('同步資料格式錯誤。'); }
+  return (await readMany(token, id, [file]))[file];
 }
 
 export async function write(token, id, file, doc) {

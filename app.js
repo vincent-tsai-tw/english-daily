@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=e00b607b9b';
-import * as speech from './speech.js?v=e00b607b9b';
-import * as sync from './sync.js?v=e00b607b9b';
+import * as core from './core.js?v=039152fbb1';
+import * as speech from './speech.js?v=039152fbb1';
+import * as sync from './sync.js?v=039152fbb1';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -162,7 +162,14 @@ function syncNow({ manual = false } = {}) {
   syncing = (async () => {
     try {
       const before = core.syncDoc(S);
-      const raw = await sync.read(cfg.token, cfg.gistId, file);
+      const files = await sync.readMany(cfg.token, cfg.gistId, [file, sync.feedbackFor(slug)]);
+      const raw = files[file];
+      const fb = files[sync.feedbackFor(slug)];
+      if (fb && typeof fb === 'object' && !core.sameDoc(fb, FEEDBACK)) {
+        FEEDBACK = fb;
+        try { localStorage.setItem(feedbackKey(), JSON.stringify(fb)); } catch { /* storage blocked */ }
+        toast('老師批改好了，到寫作區看看。');
+      }
       if (ME?.slug !== slug) return false; // the profile was switched meanwhile
       const remote = raw ? core.syncDoc(core.migrateState(raw)) : null;
       // Merge again with S: answers given while the request was in flight must not be lost.
@@ -213,6 +220,15 @@ function refreshIfIdle() {
 // --- Data -----------------------------------------------------------------------------------
 
 let PROFILES = [];
+let FEEDBACK = {};
+let DICT_CACHE = {}; // letter -> {word: [ipa, zh, en] | base word}
+
+// The vocabulary deck: every lesson's words plus the words the learner saved from the dictionary.
+const deck = () => [...DECK, ...Object.values(S.words || {}).map((w) => ({ pos: '', example_zh: '', audio: {}, ...w }))]; // {date: teacher's correction}, written only by the grading job
+const feedbackKey = () => `english-daily:feedback:${ME.slug}`;
+function loadFeedback() {
+  try { return JSON.parse(localStorage.getItem(feedbackKey()) || '{}') || {}; } catch { return {}; }
+}
 let CHANGELOG = [];
 const SEEN_KEY = 'english-daily:seen-release';
 
@@ -312,6 +328,7 @@ const dataBase = () => `data/u/${ME.slug}`;
 // Load (or switch to) the chosen learner's lessons and local progress.
 async function loadUserData() {
   S = loadState();
+  FEEDBACK = loadFeedback();
   lessonCache.clear();
   poolPromise = null;
   [{ lessons: INDEX }, DECK] = await Promise.all([getJSON(`${dataBase()}/index.json`), getJSON(`${dataBase()}/vocab.json`)]);
@@ -338,12 +355,12 @@ async function chooseProfile(profile) {
 
 function reviewQueue() {
   const t = today();
-  const due = DECK.filter((v) => core.isDue(S.srs[wkey(v.word)], t))
+  const due = deck().filter((v) => core.isDue(S.srs[wkey(v.word)], t))
     .sort((a, b) => S.srs[wkey(a.word)].due.localeCompare(S.srs[wkey(b.word)].due));
   const log = S.reviewLog[t] || { reviewed: 0, introduced: 0 };
   const room = Math.max(0, S.settings.newPerDay - log.introduced);
   // The current lesson's words are introduced by its vocabulary section, not by review.
-  const fresh = DECK.filter((v) => !S.srs[wkey(v.word)] && v.date < currentLessonDate()).slice(0, room);
+  const fresh = deck().filter((v) => !S.srs[wkey(v.word)] && v.date < currentLessonDate()).slice(0, room);
   return [...due.map((v) => ({ v, isNew: false })), ...fresh.map((v) => ({ v, isNew: true }))];
 }
 
@@ -526,8 +543,80 @@ function highlight(text, items) {
 
 const vocabItems = (L) => [
   ...L.vocab.map((v) => ({ v: { ...v, date: L.date }, old: false })),
-  ...DECK.filter((v) => v.date < L.date).map((v) => ({ v, old: true })),
+  ...deck().filter((v) => v.date < L.date).map((v) => ({ v, old: true })),
 ];
+
+// --- Dictionary -----------------------------------------------------------------------------
+
+const WORD_CHARS = /[A-Za-z'’-]/;
+const LOOKUP_IN = '.reading, .said, .example, .sample, .shadow-text, .prompt-q, .q-text, .ref, .fixed, .orig, .def, .heard';
+
+async function dictLetter(letter) {
+  if (!DICT_CACHE[letter]) {
+    DICT_CACHE[letter] = getJSON(`data/dict/${letter}.json`).catch(() => ({}));
+  }
+  return DICT_CACHE[letter];
+}
+
+// Look a word up offline (ECDICT subset), following inflections to the base word; falls back to
+// a free online dictionary (English only) for words outside the subset.
+async function lookup(raw) {
+  const word = raw.toLowerCase().replace(/’/g, "'").replace(/^[^a-z]+|[^a-z]+$/g, '');
+  if (!word) return null;
+  const book = await dictLetter(word[0]);
+  let entry = book[word];
+  let base = word;
+  if (typeof entry === 'string') { base = entry; entry = (await dictLetter(base[0]))[base]; }
+  if (Array.isArray(entry)) return { word, base, ipa: entry[0], zh: entry[1], en: entry[2] };
+  try {
+    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const meaning = data[0]?.meanings?.[0];
+    return { word, base: word, ipa: data[0]?.phonetic || '', zh: '', en: meaning ? `${meaning.partOfSpeech}: ${meaning.definitions?.[0]?.definition || ''}` : '' };
+  } catch { return null; }
+}
+
+// The word under a tap, from the text node at that point.
+function wordAtPoint(x, y) {
+  const range = document.caretRangeFromPoint?.(x, y) || (document.caretPositionFromPoint && ((p) => p && { startContainer: p.offsetNode, startOffset: p.offset })(document.caretPositionFromPoint(x, y)));
+  const node = range?.startContainer;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+  const text = node.textContent;
+  let a = range.startOffset;
+  let b = a;
+  while (a > 0 && WORD_CHARS.test(text[a - 1])) a -= 1;
+  while (b < text.length && WORD_CHARS.test(text[b])) b += 1;
+  const word = text.slice(a, b);
+  if (!/[A-Za-z]/.test(word)) return null;
+  const sentence = (text.match(/[^.!?]*[.!?]?/g) || []).find((seg) => text.indexOf(seg) <= a && text.indexOf(seg) + seg.length >= b) || text;
+  return { word, sentence: sentence.trim().slice(0, 200) };
+}
+
+async function openDictionary(word, sentence) {
+  showSheet(h('p', { class: 'sheet-word' }, word), h('p', { class: 'muted' }, '查字典中…'));
+  const hit = await lookup(word);
+  if (!hit) { showSheet(h('p', { class: 'sheet-word' }, word), h('p', { class: 'muted' }, '字典裡找不到這個字（可能是人名或縮寫）。')); return; }
+  const key = wkey(hit.base);
+  const known = deck().some((v) => wkey(v.word) === key);
+  const addBtn = h('button', {
+    class: 'btn', type: 'button',
+    onclick: () => {
+      S.words[key] = { word: hit.base, ipa: hit.ipa, zh: hit.zh || hit.en, definition: hit.en, example: sentence, date: today(), t: now() };
+      if (!S.srs[key]) setCard(hit.base, { ...core.newCard(today()), due: core.addDays(today(), 1) });
+      save();
+      updateBadge();
+      put(addBtn, icon('check'), '已加入單字本');
+      addBtn.disabled = true;
+    },
+  }, '加入我的單字本');
+  showSheet(
+    h('p', { class: 'sheet-word' }, hit.base, hit.base !== hit.word ? h('small', { class: 'muted' }, `　（${hit.word} 的原形）`) : null, ' ', sayBtn(hit.base)),
+    hit.ipa ? h('p', { class: 'meta' }, `/${hit.ipa.replace(/^\/|\/$/g, '')}/`) : null,
+    hit.zh ? h('p', { class: 'zh-big' }, hit.zh) : null,
+    hit.en ? h('p', { class: 'def' }, hit.en) : null,
+    h('div', { class: 'row' }, known ? h('span', { class: 'muted' }, '已經在你的單字本裡') : addBtn));
+}
 
 // --- Questions ------------------------------------------------------------------------------
 
@@ -596,7 +685,7 @@ function readingBlock(L, reading, items, kind, accent) {
       speech.ttsSupported() || reading.paragraphs.every(speech.hasClip)), rateToggle()),
     accent ? h('p', { class: 'hint' }, `朗讀：${accent}口音`) : null,
     h('div', { class: 'reading' }, reading.paragraphs.map((p) => h('p', {}, highlight(p, items)))),
-    h('p', { class: 'hint' }, '藍色底線是新的字，灰色虛線是以前學過的字，點一下看解釋。'),
+    h('p', { class: 'hint' }, '藍色底線是新的字，灰色虛線是以前學過的字。點任何一個英文字都可以查字典，並加入單字本。'),
     h('h2', { class: 'section-title' }, '閱讀理解'),
     questionList(L, kind, reading.questions),
   ];
@@ -924,6 +1013,7 @@ function writeSection(L) {
   };
   paint();
   if (ans(L.date, 'write.submitted')) put(feedback, writingFeedback(L, area.value));
+  const teacher = ans(L.date, 'write.submitted') ? teacherFeedback(L.date) : null;
   return [
     h('h1', { class: 'title' }, '中翻英暖身'),
     L.translation.map((t, i) => translationItem(L.date, i, t)),
@@ -933,7 +1023,26 @@ function writeSection(L) {
     area,
     h('div', { class: 'row spread' }, count, h('button', { class: 'btn primary', type: 'button', onclick: submit }, '交卷，看回饋')),
     feedback,
+    teacher,
   ];
+}
+
+// The native teacher's sentence-by-sentence correction, or where it stands.
+function teacherFeedback(date) {
+  const fb = FEEDBACK[date];
+  if (!fb) {
+    return h('div', { class: 'card' }, h('p', { class: 'coach-head' }, '老師批改中'),
+      h('p', { class: 'muted' }, '每天 9、12、18、22 點批改，結果會出現在這裡（手機和電腦都看得到）。'));
+  }
+  return h('div', { class: 'card teacher' },
+    h('p', { class: 'coach-head' }, `老師批改・${fb.score}/10`),
+    h('p', {}, fb.overall_zh),
+    fb.items?.length ? [h('h3', {}, '逐句修改'), h('ol', { class: 'corrections' }, fb.items.map((it) => h('li', {},
+      h('p', { class: 'orig' }, it.original), h('p', { class: 'fixed' }, it.corrected, ' ', sayBtn(it.corrected)),
+      h('p', { class: 'muted' }, it.note_zh))))] : h('p', { class: 'muted' }, '沒有需要改的句子。'),
+    fb.better_zh?.length ? [h('h3', {}, '可以更道地'), h('ul', { class: 'plain' }, fb.better_zh.map((x) => h('li', {}, x)))] : null,
+    fb.rewrite ? [h('h3', {}, '改寫版'), h('div', { class: 'sample' }, fb.rewrite), h('div', { class: 'row' }, sayBtn(fb.rewrite, '聽改寫版'))] : null,
+    h('p', { class: 'muted' }, `批改時間：${fb.graded_at || ''}`));
 }
 
 const RENDER = { vocab: vocabSection, read: readSection, grammar: grammarSection, listen: listenSection, speak: speakSection, write: writeSection };
@@ -1012,12 +1121,15 @@ async function homePage(date) {
   return h('div', { class: 'page' },
     h('p', { class: 'eyebrow' }, levelTag(L.level, entry.coach?.level_change), formatDate(date),
       notToday ? '・今天的新課還沒產生，先練最近一課' : '', isCurrent ? '' : '・過去的課',
-      entry.qa ? h('span', { class: 'qa-badge' }, icon('check'), '母語老師已審核') : null),
+      entry.qa ? h('button', {
+        class: 'qa-badge', type: 'button',
+        onclick: (e) => { e.stopPropagation(); showSheet(h('p', { class: 'sheet-word' }, '母語老師審核'), h('div', { class: 'qa-notes' }, entry.qa.split('\n').map((ln) => h('p', {}, ln.replace(/^- /, ''))))); },
+      }, icon('check'), '母語老師已審核', ' ›') : null),
     h('h1', { class: 'headline' }, L.theme_zh),
     h('p', { class: 'lede' }, h('strong', {}, `${L.theme}. `), L.summary_zh),
     h('div', { class: 'stats' },
       stat(`${streak()}`, '連續天數'), stat(`${finished}/${SECTIONS.length}`, '今日進度'),
-      stat(`${queue.length}`, '待複習單字'), stat(`${DECK.length}`, '單字庫')),
+      stat(`${queue.length}`, '待複習單字'), stat(`${deck().length}`, '單字庫')),
     h('p', { class: 'sync-line', id: 'sync-line' }),
     isCurrent ? coachCard(entry.coach) : null,
     next
@@ -1068,7 +1180,7 @@ async function challengePage(date) {
   if (!C) throw new Error('這一課沒有挑戰加練');
   const items = [
     ...C.glossary.map((g) => ({ v: { word: g.word, zh: g.zh, definition: g.definition || '' }, old: false })),
-    ...[...L.vocab.map((v) => ({ ...v, date: L.date })), ...DECK.filter((v) => v.date < L.date)].map((v) => ({ v, old: true })),
+    ...[...L.vocab.map((v) => ({ ...v, date: L.date })), ...deck().filter((v) => v.date < L.date)].map((v) => ({ v, old: true })),
   ];
   const finish = () => {
     markDone(date, 'challenge');
@@ -1259,7 +1371,7 @@ async function practicePage(requested) {
   };
   const coach = latestCoach();
   const weakPoints = new Set((coach?.weak_grammar || []).map((g) => g.point));
-  const deck = DECK.filter((v) => v.date <= today());
+  const deck = deck().filter((v) => v.date <= today());
 
   const nextButton = (play) => h('button', { class: 'btn primary', type: 'button', hidden: true, onclick: () => next(play) }, '下一題');
 
@@ -1425,7 +1537,7 @@ function progressPage() {
   const coach = latestCoach();
   const { lessons, stats } = core.skillStats(S.results);
   const connected = Boolean(sync.loadConfig().gistId);
-  const deckByWord = new Map(DECK.map((v) => [wkey(v.word), v]));
+  const deckByWord = new Map(deck().map((v) => [wkey(v.word), v]));
   const weakWords = Object.entries(S.srs).filter(([, c]) => isWeak(c))
     .sort((a, b) => (b[1].lapses || 0) - (a[1].lapses || 0) || a[1].ease - b[1].ease).slice(0, 10);
   const completed = INDEX.filter((x) => SECTIONS.every((s) => isDone(x.date, s.id))).length;
@@ -1451,6 +1563,11 @@ function progressPage() {
       ? h('ul', { class: 'plain' }, weakWords.map(([w, c]) => h('li', {}, h('strong', {}, deckByWord.get(w)?.word || w), '　', deckByWord.get(w)?.zh || '',
         h('span', { class: 'muted' }, c.lapses ? `　忘了 ${c.lapses} 次` : '　有點難'))))
       : h('p', { class: 'muted' }, '目前沒有。複習時按「忘了」或「有點難」的字會列在這裡，並更常出現在新課裡。'),
+    h('h2', { class: 'section-title' }, '老師批改紀錄'),
+    Object.keys(FEEDBACK).length
+      ? h('ul', { class: 'plain' }, Object.keys(FEEDBACK).sort().reverse().map((d) => h('li', {},
+        h('a', { href: `#/l/${d}/write` }, `${formatDate(d)}・${FEEDBACK[d].score}/10`), h('span', { class: 'muted' }, `　${(FEEDBACK[d].items || []).length} 處修改`))))
+      : h('p', { class: 'muted' }, '交卷後老師會在當天批改（9、12、18、22 點），批改過的作文會列在這裡。'),
     h('h2', { class: 'section-title' }, '累計'),
     h('div', { class: 'stats' }, stat(`${completed}`, '完成的課'), stat(`${challenges}`, '挑戰加練'),
       stat(`${Object.keys(S.srs).length}`, '學過的字'), stat(`${practiced}`, '自由練習題')),
@@ -1657,7 +1774,7 @@ function settingsPage() {
     h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: doImport }, '匯入'), resetBtn),
     h('p', { class: 'muted' }, '開著同步時，清除只會清這台裝置；下次同步會把雲端的紀錄拿回來。'),
     h('h2', { class: 'section-title' }, '關於'),
-    h('p', { class: 'muted' }, '每天的題目由 AI 自動生成，可能有錯；遇到奇怪的地方請以字典為準。聽力使用裝置內建的朗讀聲音，口說使用瀏覽器的語音辨識。'));
+    h('p', { class: 'muted' }, '每天的題目由 AI 自動生成並經母語老師審核，仍可能有錯。字典資料來自開源的 ECDICT（MIT 授權）；查不到的字改用線上字典。'));
 }
 
 // --- Shell ----------------------------------------------------------------------------------
@@ -1746,6 +1863,12 @@ async function boot() {
   document.addEventListener('click', (e) => {
     const sheet = $('#sheet');
     if (!sheet.hidden && !sheet.contains(e.target)) hideSheet();
+  });
+  // Tap any English word in lesson text to look it up.
+  $('#view').addEventListener('click', (e) => {
+    if (e.target.closest('button, a, input, textarea, select, summary, .vw') || !e.target.closest(LOOKUP_IN)) return;
+    const hit = wordAtPoint(e.clientX, e.clientY);
+    if (hit) openDictionary(hit.word, hit.sentence);
   });
   paintQuiet();
   try {
