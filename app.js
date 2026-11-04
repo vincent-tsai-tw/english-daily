@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=5f24e85940';
-import * as speech from './speech.js?v=5f24e85940';
-import * as sync from './sync.js?v=5f24e85940';
+import * as core from './core.js?v=e00b607b9b';
+import * as speech from './speech.js?v=e00b607b9b';
+import * as sync from './sync.js?v=e00b607b9b';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -1011,7 +1011,8 @@ async function homePage(date) {
   const pending = pendingIds();
   return h('div', { class: 'page' },
     h('p', { class: 'eyebrow' }, levelTag(L.level, entry.coach?.level_change), formatDate(date),
-      notToday ? '・今天的新課還沒產生，先練最近一課' : '', isCurrent ? '' : '・過去的課'),
+      notToday ? '・今天的新課還沒產生，先練最近一課' : '', isCurrent ? '' : '・過去的課',
+      entry.qa ? h('span', { class: 'qa-badge' }, icon('check'), '母語老師已審核') : null),
     h('h1', { class: 'headline' }, L.theme_zh),
     h('p', { class: 'lede' }, h('strong', {}, `${L.theme}. `), L.summary_zh),
     h('div', { class: 'stats' },
