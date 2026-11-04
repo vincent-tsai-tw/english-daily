@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=039152fbb1';
-import * as speech from './speech.js?v=039152fbb1';
-import * as sync from './sync.js?v=039152fbb1';
+import * as core from './core.js?v=8f98dd02d3';
+import * as speech from './speech.js?v=8f98dd02d3';
+import * as sync from './sync.js?v=8f98dd02d3';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -1371,7 +1371,7 @@ async function practicePage(requested) {
   };
   const coach = latestCoach();
   const weakPoints = new Set((coach?.weak_grammar || []).map((g) => g.point));
-  const deck = deck().filter((v) => v.date <= today());
+  const words = deck().filter((v) => v.date <= today());
 
   const nextButton = (play) => h('button', { class: 'btn primary', type: 'button', hidden: true, onclick: () => next(play) }, '下一題');
 
@@ -1415,7 +1415,7 @@ async function practicePage(requested) {
         h('div', { class: 'row' }, sayBtn(s.en, '聽'), slowBtn(s.en), action), live, out], nextBtn) };
     },
     vocab: () => {
-      const v = pick(deck, deck.filter((x) => isWeak(S.srs[wkey(x.word)])));
+      const v = pick(words, words.filter((x) => isWeak(S.srs[wkey(x.word)])));
       const nextBtn = nextButton(false);
       const out = h('div');
       const check = () => {
@@ -1499,7 +1499,7 @@ async function practicePage(requested) {
   };
 
   const orderable = pool.sentences.filter((s) => { const n = s.en.split(/\s+/).length; return n >= ORDER_WORDS[0] && n <= ORDER_WORDS[1]; });
-  const empty = { dict: pool.sentences, shadow: pool.sentences, vocab: deck, grammar: pool.grammar, order: orderable, trans: pool.translate }[mode];
+  const empty = { dict: pool.sentences, shadow: pool.sentences, vocab: words, grammar: pool.grammar, order: orderable, trans: pool.translate }[mode];
   function next(play) {
     speech.stop();
     if (!empty.length) { put(stage, h('p', { class: 'muted' }, '還沒有題目。')); return; }
