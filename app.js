@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=66f81a8728';
-import * as speech from './speech.js?v=66f81a8728';
-import * as sync from './sync.js?v=66f81a8728';
+import * as core from './core.js?v=a214c5551a';
+import * as speech from './speech.js?v=a214c5551a';
+import * as sync from './sync.js?v=a214c5551a';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -508,6 +508,16 @@ function scoreLine(score) {
   return h('p', { class: 'score' }, h('strong', {}, `符合度 ${pct(score)}`), `　${note}`);
 }
 
+// A sentence box that grows with the text (dictation): Enter submits, so no line breaks.
+function sentenceField(placeholder, onEnter) {
+  const area = h('textarea', {
+    class: 'field sentence', rows: 2, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder,
+    onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter(); } },
+    oninput: () => { area.style.height = 'auto'; area.style.height = `${area.scrollHeight}px`; },
+  });
+  return area;
+}
+
 function textField(placeholder, onEnter) {
   return h('input', {
     class: 'field', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder,
@@ -703,7 +713,7 @@ function dictationItem(date, key, n, sentence) {
     setAns(date, key, value, core.alignWords(sentence, value).score);
     show(value);
   };
-  const input = textField('打出你聽到的句子', check);
+  const input = sentenceField('打出你聽到的句子', check);
   const prev = ans(date, key);
   if (prev) { input.value = prev; show(prev); }
   return h('div', { class: 'card' },
@@ -1389,7 +1399,7 @@ async function practicePage(requested) {
         nextBtn.hidden = false;
         put(out, diffView(r), scoreLine(r.score), s.zh ? h('p', { class: 'zh-sub' }, s.zh) : null);
       };
-      const input = textField('打出你聽到的句子', check);
+      const input = sentenceField('打出你聽到的句子', check);
       const checkBtn = h('button', { class: 'btn', type: 'button', onclick: check }, '對答案');
       return { say: s.en, card: practiceCard([h('div', { class: 'row' }, sayBtn(s.en, '播放'), slowBtn(s.en)), input, out], [checkBtn, nextBtn]) };
     },

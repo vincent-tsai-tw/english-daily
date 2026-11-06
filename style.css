@@ -209,6 +209,7 @@ p { margin: 0; }
 }
 .field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
 textarea.field { resize: vertical; }
+textarea.sentence { resize: none; min-height: 3.2em; overflow: hidden; }
 .essay { min-height: 220px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 select.field { appearance: auto; }
