@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=98d42ae813';
-import * as speech from './speech.js?v=98d42ae813';
-import * as sync from './sync.js?v=98d42ae813';
+import * as core from './core.js?v=ecada2802b';
+import * as speech from './speech.js?v=ecada2802b';
+import * as sync from './sync.js?v=ecada2802b';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
