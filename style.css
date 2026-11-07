@@ -166,6 +166,55 @@ p { margin: 0; }
 .hide-zh .hideable { filter: blur(7px); cursor: pointer; transition: filter .2s; }
 .hide-zh .hideable.peek { filter: none; }
 .pattern { background: var(--raised); border-radius: 12px; padding: 12px 14px; font-weight: 600; font-size: 16px; border: 1px solid var(--sep); }
+/* Grammar diagrams: one hue per usage (no green/red: those mean right/wrong) */
+.hue0 { --u: #0071e3; --u-tint: rgba(0, 113, 227, .1); }
+.hue1 { --u: #8944ab; --u-tint: rgba(137, 68, 171, .1); }
+.hue2 { --u: #b25000; --u-tint: rgba(178, 80, 0, .1); }
+.hue3 { --u: #0a7b83; --u-tint: rgba(10, 123, 131, .1); }
+@media (prefers-color-scheme: dark) {
+  .hue0 { --u: #409cff; --u-tint: rgba(64, 156, 255, .2); }
+  .hue1 { --u: #da8fff; --u-tint: rgba(218, 143, 255, .2); }
+  .hue2 { --u: #ffb340; --u-tint: rgba(255, 179, 64, .18); }
+  .hue3 { --u: #5de6ff; --u-tint: rgba(93, 230, 255, .16); }
+}
+.key-point { border-left: 4px solid var(--accent); background: var(--accent-tint); border-radius: 0 14px 14px 0; padding: 12px 16px; }
+.key-point p { font-size: 18px; font-weight: 600; line-height: 1.45; margin-top: 2px; }
+.uses { display: grid; gap: 12px; }
+.use { border-left: 4px solid var(--u); border-radius: 6px var(--radius) var(--radius) 6px; }
+.use-label { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 17px; }
+.use-n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--u); color: #fff; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; }
+.formula { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fx { display: inline-block; border-radius: 8px; padding: 3px 10px; font-size: 16px; font-weight: 600; line-height: 1.4; border: 1.5px solid transparent; }
+.fx.word { background: var(--u-tint, var(--accent-tint)); color: var(--u, var(--accent)); }
+.fx.slot { border: 1.5px dashed var(--text-3); color: var(--text-2); font-weight: 500; }
+.fx.opt { border: 1.5px dashed var(--u, var(--accent)); color: var(--u, var(--accent)); font-weight: 500; opacity: .8; }
+.fx.punct { padding: 0 2px; color: var(--text-2); }
+.fx-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text-2); font-size: 14px; margin-top: 8px !important; }
+.fx-legend .fx { font-size: 13px; padding: 0 8px; }
+.huex { --u: var(--text-2); --u-tint: var(--fill); }
+.signal { color: var(--text-2); font-size: 14px; }
+.use-note { font-size: 15px; color: var(--text-2); background: var(--raised); border-radius: 10px; padding: 8px 12px; }
+.use .examples { border-top: 1px solid var(--sep); padding-top: 12px; margin-top: 14px; }
+.mistakes { list-style: none; padding: 0; margin: 0; }
+.mistakes li + li { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--sep); }
+.mistakes .wrong { color: var(--bad); text-decoration: line-through; text-decoration-thickness: 1px; }
+.mistakes .wrong b, .mistakes .right b { display: inline-block; width: 1.2em; text-decoration: none; }
+.mistakes .right { color: var(--ok); font-weight: 600; }
+.mistakes .why { color: var(--text-2); font-size: 15px; padding-left: 1.2em; margin-top: 2px; }
+.tl-row { position: relative; padding: 4px 0; }
+.tl-row + .tl-row { margin-top: 6px; }
+.tl-label { font-size: 15px; font-weight: 500; color: var(--u); line-height: 1.35; }
+.tl-note { font-size: 13px; color: var(--text-2); }
+.tl-label.right, .tl-note.right { text-align: right; } .tl-label.center, .tl-note.center { text-align: center; }
+.tl-track { position: relative; height: 22px; margin-top: 2px; }
+.tl-track::after { content: ''; position: absolute; left: var(--now); top: 0; bottom: 0; border-left: 2px dashed var(--text-3); }
+.tl-track::before { content: ''; position: absolute; left: 0; right: 0; top: 10px; height: 2px; background: var(--fill); }
+.tl-bar { position: absolute; top: 6px; height: 10px; z-index: 1; border-radius: 5px; background: var(--u); min-width: 10px; }
+.tl-dot { position: absolute; top: 4px; z-index: 1; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--u); box-shadow: 0 0 0 3px var(--bg-alt); }
+.tl-axis { position: relative; height: 18px; display: flex; justify-content: space-between; color: var(--text-3); font-size: 13px; }
+.tl-axis span:nth-child(2) { color: var(--text-2); font-weight: 600; }
+.review-guide summary { color: var(--link); cursor: pointer; font-size: 15px; }
+.review-guide > * + * { margin-top: 12px; }
 .examples { list-style: none; padding: 0; margin: 0; }
 .examples li + li { margin-top: 10px; }
 .reading p { font-size: 18px; line-height: 1.65; }

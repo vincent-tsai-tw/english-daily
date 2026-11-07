@@ -141,6 +141,31 @@ export function findPhrases(text, phrases) {
   return out;
 }
 
+// Grammar formulas such as "I'd suggest (that) + S + V（原形）?" split into blocks for the
+// diagram: fixed words, slots the learner fills in (S, V, V-ing, Chinese labels…), optional
+// words in ASCII parentheses, and trailing punctuation.
+const SLOT = /^(S|V|O|N|V-?ing|V-?ed|p\.?p\.?|adj\.?|adv\.?|sb|sth|to V)$/;
+const CJK = /[㐀-鿿]/;
+
+export function formulaParts(form) {
+  const out = [];
+  for (const raw of String(form).split(/\s+\+\s+/)) {
+    let token = raw.trim();
+    const punct = token.match(/[?.!]+$/)?.[0];
+    if (punct) token = token.slice(0, -punct.length).trim();
+    for (const piece of token.split(/(\([^)]*\))/).map((p) => p.trim()).filter(Boolean)) {
+      const base = piece.replace(/（[^）]*）/g, '').trim();
+      const kind = /^\(.*\)$/.test(piece) ? 'opt' : SLOT.test(base) || CJK.test(base) ? 'slot' : 'word';
+      out.push({ text: piece, kind });
+    }
+    if (punct) out.push({ text: punct, kind: 'punct' });
+  }
+  return out;
+}
+
+// Position (percent across the track) of a timeline point from -3 (long ago) to 3 (later).
+export const timelinePct = (v) => 6 + ((Math.max(-3, Math.min(3, v)) + 3) / 6) * 88;
+
 export function normalizeAnswer(s) {
   return String(s).toLowerCase().replace(/’/g, "'").replace(/[.!?,;:]+$/g, '').replace(/\s+/g, ' ').trim();
 }
