@@ -314,3 +314,99 @@ export function skillStats(results, window = 7) {
   }]));
   return { lessons: dates.length, stats };
 }
+
+// --- Dashboard (same rules as scripts/advisor.py) ---------------------------------------------
+
+export const SESSION_GAP_MS = 5 * 60 * 1000;
+export const MASTERED_INTERVAL = 21;
+export const DAYPARTS = [['清晨', 0, 6], ['早上', 6, 11], ['中午', 11, 14], ['下午', 14, 18], ['晚上', 18, 23], ['深夜', 23, 24]];
+
+// Every real answer, section and word-review time (ms) in a progress document.
+export function eventTimes(doc) {
+  const out = new Set();
+  const real = (t) => typeof t === 'number' && t > 1e12;
+  for (const days of [doc?.answers, doc?.results]) {
+    for (const items of Object.values(days || {})) for (const v of Object.values(items || {})) if (real(v?.t)) out.add(v.t);
+  }
+  for (const marks of Object.values(doc?.done || {})) for (const t of Object.values(marks || {})) if (real(t)) out.add(t);
+  for (const c of Object.values(doc?.srs || {})) if (real(c?.t)) out.add(c.t);
+  return [...out].sort((a, b) => a - b);
+}
+
+// {local day: {minutes, events}}. A gap over SESSION_GAP_MS starts a new sitting (counted as 1 minute).
+export function dayActivity(doc) {
+  const byDay = {};
+  for (const t of eventTimes(doc)) (byDay[localDate(new Date(t))] ||= []).push(t);
+  const out = {};
+  for (const [day, ts] of Object.entries(byDay)) {
+    let ms = 60000;
+    for (let i = 1; i < ts.length; i++) { const gap = ts[i] - ts[i - 1]; ms += gap <= SESSION_GAP_MS ? gap : 60000; }
+    out[day] = { minutes: Math.round(ms / 60000), events: ts.length };
+  }
+  for (const [day, on] of Object.entries(doc?.activity || {})) if (on && !out[day]) out[day] = { minutes: 0, events: 0 };
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+export function streakOf(days, today) {
+  const have = new Set(days);
+  let d = have.has(today) ? today : addDays(today, -1);
+  let n = 0;
+  while (have.has(d)) { n += 1; d = addDays(d, -1); }
+  return n;
+}
+
+// {skill: [[lesson date, mean score]]}, oldest first, for lessons with answers in that skill.
+export function skillSeries(results) {
+  const out = Object.fromEntries(Object.keys(SKILLS).map((s) => [s, []]));
+  for (const date of Object.keys(results || {}).sort()) {
+    const by = {};
+    for (const [k, r] of Object.entries(results[date] || {})) {
+      const s = skillOf(k);
+      if (s && typeof r?.s === 'number') (by[s] ||= []).push(r.s);
+    }
+    for (const [s, v] of Object.entries(by)) out[s].push([date, v.reduce((a, b) => a + b, 0) / v.length]);
+  }
+  return out;
+}
+
+// Per grammar point (taught or reviewed): {point, zh, acc, n, first}, in the order first taught.
+export function grammarMastery(results, entries) {
+  const points = new Map();
+  const add = (point, zh, date, prefix) => {
+    if (!point) return;
+    const p = points.get(point) || { point, zh, first: date, scores: [] };
+    p.zh ||= zh;
+    if (date < p.first) p.first = date;
+    for (const [k, r] of Object.entries(results?.[date] || {})) if (k.startsWith(`${prefix}.`) && typeof r?.s === 'number') p.scores.push(r.s);
+    points.set(point, p);
+  };
+  // Oldest first, so each point keeps the name from the lesson that taught it.
+  for (const e of [...(entries || [])].sort((a, b) => a.date.localeCompare(b.date))) {
+    add(e.grammar, e.grammar_zh, e.date, 'grammar');
+    add(e.review, e.review_zh, e.date, 'review');
+  }
+  return [...points.values()].filter((p) => p.scores.length)
+    .map(({ scores, ...p }) => ({ ...p, n: scores.length, acc: scores.reduce((a, b) => a + b, 0) / scores.length }))
+    .sort((a, b) => a.first.localeCompare(b.first));
+}
+
+export function dayparts(doc) {
+  const counts = Object.fromEntries(DAYPARTS.map(([name]) => [name, 0]));
+  for (const t of eventTimes(doc)) {
+    const hour = new Date(t).getHours();
+    counts[DAYPARTS.find(([, lo, hi]) => hour >= lo && hour < hi)[0]] += 1;
+  }
+  return DAYPARTS.map(([name]) => [name, counts[name]]);
+}
+
+// Word cards by state: often forgotten (a lapse or a lowered ease), well known, still learning.
+export function vocabStatus(srs, weakEase = 2.4) {
+  const out = { mastered: 0, learning: 0, weak: 0 };
+  for (const c of Object.values(srs || {})) {
+    if (!c || typeof c !== 'object') continue;
+    if ((c.lapses || 0) > 0 || (c.ease ?? 2.5) < weakEase) out.weak += 1;
+    else if ((c.interval || 0) >= MASTERED_INTERVAL) out.mastered += 1;
+    else out.learning += 1;
+  }
+  return out;
+}

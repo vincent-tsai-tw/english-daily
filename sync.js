@@ -6,6 +6,7 @@ const API = 'https://api.github.com';
 export const GIST_DESCRIPTION = 'english-daily progress';
 export const fileFor = (slug) => `english-daily-progress-${slug}.json`; // as scripts/progress.py
 export const feedbackFor = (slug) => `english-daily-feedback-${slug}.json`; // written only by the grading job
+export const advisorFor = (slug) => `english-daily-advisor-${slug}.json`; // written only by the daily lesson job
 export const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=English%20Daily%20sync';
 const CONFIG_KEY = 'english-daily:sync';
 

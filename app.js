@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=190bdd7b77';
-import * as speech from './speech.js?v=190bdd7b77';
-import * as sync from './sync.js?v=190bdd7b77';
+import * as core from './core.js?v=086cec234e';
+import * as speech from './speech.js?v=086cec234e';
+import * as sync from './sync.js?v=086cec234e';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -174,13 +174,18 @@ function syncNow({ manual = false } = {}) {
   syncing = (async () => {
     try {
       const before = core.syncDoc(S);
-      const files = await sync.readMany(cfg.token, cfg.gistId, [file, sync.feedbackFor(slug)]);
+      const files = await sync.readMany(cfg.token, cfg.gistId, [file, sync.feedbackFor(slug), sync.advisorFor(slug)]);
       const raw = files[file];
       const fb = files[sync.feedbackFor(slug)];
       if (fb && typeof fb === 'object' && !core.sameDoc(fb, FEEDBACK)) {
         FEEDBACK = fb;
         try { localStorage.setItem(feedbackKey(), JSON.stringify(fb)); } catch { /* storage blocked */ }
         toast('老師批改好了，到寫作區看看。');
+      }
+      const adv = files[sync.advisorFor(slug)];
+      if (adv && typeof adv === 'object' && !core.sameDoc(adv, ADVISOR)) {
+        ADVISOR = adv;
+        try { localStorage.setItem(advisorKey(slug), JSON.stringify(adv)); } catch { /* storage blocked */ }
       }
       if (ME?.slug !== slug) return false; // the profile was switched meanwhile
       const remote = raw ? core.syncDoc(core.migrateState(raw)) : null;
@@ -240,6 +245,13 @@ const deck = () => [...DECK, ...Object.values(S.words || {}).map((w) => ({ pos: 
 const feedbackKey = () => `english-daily:feedback:${ME.slug}`;
 function loadFeedback() {
   try { return JSON.parse(localStorage.getItem(feedbackKey()) || '{}') || {}; } catch { return {}; }
+}
+
+// {date: report} from the learning advisor (written by the daily lesson job, read-only here).
+let ADVISOR = {};
+const advisorKey = (slug) => `english-daily:advisor:${slug}`;
+function loadAdvisor(slug) {
+  try { return JSON.parse(localStorage.getItem(advisorKey(slug)) || '{}') || {}; } catch { return {}; }
 }
 let CHANGELOG = [];
 const SEEN_KEY = 'english-daily:seen-release';
@@ -341,6 +353,8 @@ const dataBase = () => `data/u/${ME.slug}`;
 async function loadUserData() {
   S = loadState();
   FEEDBACK = loadFeedback();
+  ADVISOR = loadAdvisor(ME.slug);
+  PEOPLE.clear();
   lessonCache.clear();
   poolPromise = null;
   [{ lessons: INDEX }, DECK] = await Promise.all([getJSON(`${dataBase()}/index.json`), getJSON(`${dataBase()}/vocab.json`)]);
@@ -1684,57 +1698,280 @@ async function practicePage(requested) {
 
 // --- Progress -------------------------------------------------------------------------------
 
-function skillBars(stats) {
-  const known = Object.entries(stats).filter(([, v]) => v.acc != null);
-  const weakest = known.length > 1 ? known.reduce((a, b) => (b[1].acc < a[1].acc ? b : a))[0] : null;
-  return h('div', { class: 'bars' }, Object.entries(stats).map(([skill, v]) => h('div', { class: `bar-row${skill === weakest ? ' weak' : ''}` },
-    h('span', { class: 'bar-label' }, core.SKILL_ZH[skill]),
-    h('span', { class: 'bar' }, h('span', { class: 'bar-fill', style: `width:${v.acc == null ? 0 : Math.round(v.acc * 100)}%` })),
-    h('span', { class: 'bar-num' }, v.acc == null ? '—' : pct(v.acc)),
-    h('span', { class: 'bar-n' }, v.n ? `${v.n} 題` : ''))));
+// --- Dashboard ------------------------------------------------------------------------------
+
+const PEOPLE = new Map(); // slug -> Promise of another learner's data (read-only)
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+const shortDate = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svg(tag, attrs, ...kids) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v);
+  for (const kid of kids.flat()) if (kid) el.append(kid);
+  return el;
 }
 
-function progressPage() {
-  const latest = INDEX.find((x) => x.date <= today()) || INDEX[0];
-  const coach = latestCoach();
-  const { lessons, stats } = core.skillStats(S.results);
-  const connected = Boolean(sync.loadConfig().gistId);
-  const deckByWord = new Map(deck().map((v) => [wkey(v.word), v]));
-  const weakWords = Object.entries(S.srs).filter(([, c]) => isWeak(c))
-    .sort((a, b) => (b[1].lapses || 0) - (a[1].lapses || 0) || a[1].ease - b[1].ease).slice(0, 10);
-  const completed = INDEX.filter((x) => SECTIONS.every((s) => isDone(x.date, s.id))).length;
-  const challenges = INDEX.filter((x) => isDone(x.date, 'challenge')).length;
-  const practiced = Object.values(S.practice).reduce((sum, day) => sum + Object.values(day).reduce((n, [, t]) => n + t, 0), 0);
-  return h('div', { class: 'page' },
-    h('p', { class: 'eyebrow' }, '進度・Progress'),
-    h('h1', { class: 'headline' }, `目前等級 ${latest?.level || 'B2'}`),
+// Everything the dashboard shows about one learner. ME is the live local state; the other learner
+// is this device's cached copy (if it ever used that profile) merged with the gist copy (when this
+// device has the sync token). Nothing here writes the other learner's data.
+function personData(slug) {
+  if (slug === ME.slug) {
+    return Promise.resolve({ slug, name: ME.name, self: true, doc: S, index: INDEX, deck: deck(),
+      feedback: FEEDBACK, advisor: ADVISOR, synced: Boolean(sync.loadConfig().gistId) });
+  }
+  if (!PEOPLE.has(slug)) PEOPLE.set(slug, loadPerson(slug).catch((err) => { PEOPLE.delete(slug); throw err; }));
+  return PEOPLE.get(slug);
+}
+
+async function loadPerson(slug) {
+  const name = PROFILES.find((x) => x.slug === slug)?.name || slug;
+  const [{ lessons: index }, vocab] = await Promise.all([getJSON(`data/u/${slug}/index.json`), getJSON(`data/u/${slug}/vocab.json`)]);
+  let doc = null;
+  try {
+    const raw = localStorage.getItem(`english-daily:v1:${slug}`);
+    if (raw) doc = core.syncDoc(core.migrateState(JSON.parse(raw)));
+  } catch { /* storage blocked or unreadable */ }
+  let feedback = {};
+  let advisor = loadAdvisor(slug);
+  let synced = false;
+  const cfg = sync.loadConfig();
+  if (cfg.token && cfg.gistId) {
+    try {
+      const files = await sync.readMany(cfg.token, cfg.gistId, [sync.fileFor(slug), sync.feedbackFor(slug), sync.advisorFor(slug)]);
+      const remote = files[sync.fileFor(slug)];
+      if (remote) {
+        const theirs = core.syncDoc(core.migrateState(remote));
+        doc = doc ? core.mergeDocs(doc, theirs) : theirs;
+      }
+      feedback = files[sync.feedbackFor(slug)] || {};
+      advisor = files[sync.advisorFor(slug)] || advisor;
+      synced = true;
+    } catch { /* offline: show what this device has */ }
+  }
+  return { slug, name, self: false, doc, index, deck: [...vocab, ...Object.values(doc?.words || {})], feedback, advisor, synced };
+}
+
+function actionHref(action) {
+  const [kind, arg] = String(action || '').split(':');
+  if (kind === 'practice' && arg) return `#/practice/${arg}`;
+  if (kind === 'lesson' && arg) return `#/l/${currentLessonDate()}/${arg}`;
+  return { review: '#/review', history: '#/history', goals: '#/goals', challenge: `#/l/${currentLessonDate()}/challenge` }[kind] || null;
+}
+
+function advisorCard(p, reports) {
+  const dates = Object.keys(reports || {}).sort();
+  const report = reports[dates[dates.length - 1]];
+  const title = p.self ? '學習顧問的建議' : `${p.name} 的學習顧問報告`;
+  if (!report) {
+    return h('section', { class: 'card advisor' }, h('p', { class: 'adv-title' }, title),
+      h('p', { class: 'muted' }, p.self || p.synced ? '顧問每天早上出課前分析一次作答紀錄，有新的作答就會更新報告。' : '這台裝置開啟同步後才看得到顧問報告。'));
+  }
+  const tickKey = `english-daily:advisor-today:${p.slug}:${report.date}`;
+  let ticked = [];
+  try { ticked = JSON.parse(localStorage.getItem(tickKey) || '[]'); } catch { /* storage blocked */ }
+  const tick = (i, on) => {
+    ticked = on ? [...new Set([...ticked, i])] : ticked.filter((x) => x !== i);
+    try { localStorage.setItem(tickKey, JSON.stringify(ticked)); } catch { /* storage blocked */ }
+  };
+  const older = dates.slice(0, -1).reverse();
+  return h('section', { class: 'card advisor' },
+    h('div', { class: 'adv-head' }, h('p', { class: 'adv-title' }, title), h('span', { class: 'meta' }, `${shortDate(report.date)} 分析`)),
+    h('p', { class: 'adv-summary' }, report.summary_zh),
+    h('p', { class: 'adv-h' }, '最需要加強'),
+    h('ol', { class: 'adv-list' }, report.weaknesses.map((w) => h('li', {},
+      h('strong', {}, w.title_zh), h('p', {}, w.evidence_zh), h('p', { class: 'muted' }, w.why_zh)))),
+    h('p', { class: 'adv-h' }, '最適合的學習方法'),
+    h('div', { class: 'adv-methods' }, report.methods.map((m) => {
+      const href = p.self ? actionHref(m.action) : null;
+      return h('div', { class: 'adv-method' }, h('strong', {}, m.title_zh), h('p', {}, m.how_zh), h('p', { class: 'muted' }, m.why_zh),
+        href ? h('a', { class: 'btn subtle', href }, '去做 ›') : null);
+    })),
+    h('p', { class: 'adv-h' }, p.self ? '今天可以做' : '今天的建議'),
+    h('ul', { class: 'adv-today' }, report.today.map((t, i) => h('li', {}, p.self
+      ? h('label', {}, h('input', { type: 'checkbox', checked: ticked.includes(i), onchange: (e) => tick(i, e.target.checked) }), h('span', {}, t))
+      : t))),
+    h('details', { class: 'adv-more' }, h('summary', {}, '做得好的地方・資料說明'),
+      h('ul', { class: 'adv-list plain' }, report.strengths.map((x) => h('li', {}, h('strong', {}, x.title_zh), h('p', {}, x.evidence_zh)))),
+      h('p', { class: 'muted' }, report.data_note_zh)),
+    older.length ? h('details', { class: 'adv-more' }, h('summary', {}, `過去的報告（${older.length}）`),
+      h('ul', { class: 'adv-past' }, older.map((d) => h('li', {}, h('strong', {}, shortDate(d)), '　', reports[d].summary_zh)))) : null);
+}
+
+function dashSection(title, note, ...body) {
+  return h('section', { class: 'dash-sec' }, h('h2', { class: 'section-title' }, title), note ? h('p', { class: 'muted' }, note) : null, ...body);
+}
+
+const HEAT_STEPS = [[0, '沒練'], [1, '1–9 分'], [10, '10–19 分'], [20, '20–29 分'], [30, '30 分以上']];
+const heatLevel = (a) => (!a ? 0 : Math.max(1, HEAT_STEPS.filter(([min]) => a.minutes >= min).length - 1));
+
+// Last 8 weeks, Monday-first columns; darker = more minutes. Tap a day for its numbers.
+function calendarHeatmap(activity) {
+  const end = today();
+  const dow = (d) => (new Date(`${d}T00:00:00`).getDay() + 6) % 7;
+  const start = core.addDays(end, -dow(end) - 7 * 7);
+  const readout = h('p', { class: 'heat-readout', 'aria-live': 'polite' }, '點格子看當天練了多久');
+  const cells = [];
+  for (let i = 0; i < 56; i++) {
+    const d = core.addDays(start, i);
+    if (d > end) { cells.push(h('span', { class: 'heat-cell future' })); continue; }
+    const a = activity[d];
+    const text = `${shortDate(d)}（${WEEKDAYS[(dow(d) + 1) % 7]}）${a ? `${a.minutes ? `${a.minutes} 分鐘` : '有練習'}・${a.events} 次作答` : '沒有練習'}`;
+    cells.push(h('button', { type: 'button', class: `heat-cell l${heatLevel(a)}${d === end ? ' today' : ''}`, 'aria-label': text,
+      onclick: (e) => { put(readout, text); e.currentTarget.parentNode.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel')); e.currentTarget.classList.add('sel'); } }));
+  }
+  return h('div', { class: 'heat' },
+    h('div', { class: 'heat-wrap' },
+      h('div', { class: 'heat-days' }, ['一', '', '三', '', '五', '', '日'].map((x) => h('span', {}, x))),
+      h('div', { class: 'heat-grid' }, cells)),
+    readout,
+    h('div', { class: 'heat-legend' }, HEAT_STEPS.map(([, label], i) => h('span', {}, h('i', { class: `heat-cell l${i}` }), label))));
+}
+
+function sparkline(points) {
+  const W = 96; const H = 30; const pad = 4;
+  const x = (i) => (points.length < 2 ? W / 2 : pad + (i * (W - 2 * pad)) / (points.length - 1));
+  const y = (v) => pad + (1 - v) * (H - 2 * pad);
+  const last = points[points.length - 1];
+  return svg('svg', { class: 'spark', viewBox: `0 0 ${W} ${H}`, width: W, height: H, 'aria-hidden': 'true' },
+    svg('line', { x1: 0, x2: W, y1: y(1), y2: y(1), class: 'spark-ref' }),
+    points.length > 1 ? svg('polyline', { points: points.map(([, v], i) => `${x(i)},${y(v)}`).join(' '), class: 'spark-line' }) : null,
+    last ? svg('circle', { cx: x(points.length - 1), cy: y(last[1]), r: 4, class: 'spark-dot' }) : null);
+}
+
+// One row per skill: sparkline by lesson, recent accuracy, change against earlier lessons.
+function skillTrends(results) {
+  const series = core.skillSeries(results);
+  return h('div', { class: 'trends' }, Object.entries(series).map(([skill, pts]) => {
+    const vals = pts.map(([, v]) => v);
+    const recent = vals.length ? mean(vals.slice(-3)) : null;
+    const before = vals.length >= 5 ? mean(vals.slice(0, -3)) : null; // at least two earlier lessons to compare with
+    const delta = before == null ? null : recent - before;
+    const dir = delta == null || Math.abs(delta) < 0.005 ? '' : delta > 0 ? 'up' : 'down';
+    return h('details', { class: 'trend' },
+      h('summary', {},
+        h('span', { class: 'trend-name' }, core.SKILL_ZH[skill]),
+        vals.length ? sparkline(pts) : h('span', { class: 'spark empty' }),
+        h('span', { class: 'trend-num' }, recent == null ? '—' : pct(recent)),
+        h('span', { class: `trend-delta ${dir}` }, delta == null ? (vals.length ? `共 ${vals.length} 課` : '') : `${dir === 'up' ? '▲' : dir === 'down' ? '▼' : '＝'} ${Math.abs(Math.round(delta * 100))}`)),
+      vals.length
+        ? h('table', { class: 'mini-table' }, h('tbody', {}, pts.map(([d, v]) => h('tr', {}, h('td', {}, shortDate(d)), h('td', {}, pct(v))))))
+        : h('p', { class: 'muted' }, skill === 'speaking' ? '還沒有分數：跟讀用說的完成才會計分（安靜模式不計分）。' : '還沒有作答。'));
+  }));
+}
+
+function levelJourney(index) {
+  const lessons = [...index].reverse().filter((x) => x.date <= today()).slice(-14);
+  if (!lessons.length) return h('p', { class: 'muted' }, '還沒有課程。');
+  const changes = lessons.filter((x, i) => i && x.level !== lessons[i - 1].level).length;
+  return [
+    h('p', { class: 'muted' }, changes ? `最近 ${lessons.length} 課換過 ${changes} 次等級。` : `最近 ${lessons.length} 課都在 ${lessons[lessons.length - 1].level}；三項主要能力連續 3 課 85% 以上會升級。`),
+    h('div', { class: 'levels' }, lessons.map((x, i) => h('span', { class: `lv${i && x.level !== lessons[i - 1].level ? ' changed' : ''}` },
+      h('small', {}, shortDate(x.date)), x.level))),
+  ];
+}
+
+const masteryClass = (acc) => (acc >= 0.8 ? ['good', '穩'] : acc >= 0.6 ? ['mid', '加強中'] : ['low', '需加強']);
+
+function grammarBars(list) {
+  if (!list.length) return h('p', { class: 'muted' }, '還沒有文法作答。');
+  return h('ul', { class: 'meters' }, list.map((g) => {
+    const [cls, word] = masteryClass(g.acc);
+    return h('li', {},
+      h('p', { class: 'meter-label' }, g.zh || g.point),
+      h('div', { class: 'meter-row' },
+        h('span', { class: 'meter' }, h('span', { class: `meter-fill ${cls}`, style: `width:${Math.max(2, Math.round(g.acc * 100))}%` })),
+        h('span', { class: 'meter-num' }, `${pct(g.acc)}・${g.n} 題`),
+        h('span', { class: `status ${cls}` }, word)));
+  }));
+}
+
+function vocabBlock(doc, words) {
+  const st = core.vocabStatus(doc.srs, WEAK_EASE);
+  const inReview = st.mastered + st.learning + st.weak;
+  const fresh = Math.max(0, new Set(words.map((v) => wkey(v.word))).size - inReview);
+  const parts = [['mastered', '熟了', st.mastered], ['learning', '學習中', st.learning], ['weak', '常忘', st.weak], ['fresh', '還沒開始', fresh]];
+  const total = parts.reduce((n, [, , v]) => n + v, 0);
+  const byWord = new Map(words.map((v) => [wkey(v.word), v]));
+  const weak = Object.entries(doc.srs || {}).filter(([, c]) => isWeak(c))
+    .sort((a, b) => (b[1].lapses || 0) - (a[1].lapses || 0) || a[1].ease - b[1].ease).slice(0, 8);
+  return [
+    total ? h('div', { class: 'segbar', role: 'img', 'aria-label': parts.map(([, l, v]) => `${l} ${v}`).join('、') },
+      parts.filter(([, , v]) => v).map(([k, , v]) => h('span', { class: `seg-${k}`, style: `flex-grow:${v}` }, v / total >= 0.12 ? String(v) : ''))) : null,
+    h('div', { class: 'legend' }, parts.map(([k, l, v]) => h('span', {}, h('i', { class: `sw seg-${k}` }), `${l} ${v}`))),
+    h('p', { class: 'muted' }, `「熟了」＝複習間隔 ${core.MASTERED_INTERVAL} 天以上；「常忘」＝按過忘了或有點難。`),
+    weak.length ? h('ul', { class: 'plain' }, weak.map(([w, c]) => h('li', {}, h('strong', {}, byWord.get(w)?.word || w), '　', byWord.get(w)?.zh || '',
+      h('span', { class: 'muted' }, c.lapses ? `　忘了 ${c.lapses} 次` : '　有點難')))) : null,
+  ];
+}
+
+function essayBlock(p) {
+  const dates = Object.keys(p.feedback || {}).sort();
+  if (!dates.length) return h('p', { class: 'muted' }, '交卷後老師會在當天批改（9、12、18、22 點），分數會出現在這裡。');
+  return h('ul', { class: 'meters' }, dates.map((d) => {
+    const f = p.feedback[d];
+    return h('li', {}, h('div', { class: 'meter-row' },
+      p.self ? h('a', { class: 'meter-date', href: `#/l/${d}/write` }, shortDate(d)) : h('span', { class: 'meter-date' }, shortDate(d)),
+      h('span', { class: 'meter' }, h('span', { class: 'meter-fill seq', style: `width:${(f.score || 0) * 10}%` })),
+      h('span', { class: 'meter-num' }, `${f.score}/10・${(f.items || []).length} 處修改`)));
+  }));
+}
+
+function habitsBlock(doc, minutes, goal) {
+  const parts = core.dayparts(doc);
+  const total = parts.reduce((n, [, c]) => n + c, 0);
+  const top = Math.max(1, ...parts.map(([, c]) => c));
+  const avgMin = minutes.length ? Math.round(mean(minutes)) : null;
+  const pending = Object.values(doc.pending || {}).filter((x) => x && !x.done).length;
+  const extra = Object.values(doc.practice || {}).reduce((n, day) => n + Object.values(day || {}).reduce((m, [, t]) => m + t, 0), 0);
+  return [
+    total ? h('ul', { class: 'meters compact' }, parts.map(([name, c]) => h('li', {}, h('div', { class: 'meter-row' },
+      h('span', { class: 'meter-date' }, name),
+      h('span', { class: 'meter' }, h('span', { class: 'meter-fill seq', style: `width:${(c / top) * 100}%` })),
+      h('span', { class: 'meter-num' }, c ? `${Math.round((c / total) * 100)}%` : '—'))))) : h('p', { class: 'muted' }, '還沒有作答時間紀錄。'),
+    h('p', { class: 'muted' }, '依作答時間分：清晨 0–6、早上 6–11、中午 11–14、下午 14–18、晚上 18–23、深夜 23–24 點。'),
+    h('div', { class: 'stats three' },
+      stat(avgMin == null ? '—' : `${avgMin}`, goal ? `平均分鐘／目標 ${goal}` : '有練習的日子平均分鐘'),
+      stat(`${extra}`, '自由練習題'), stat(`${pending}`, '口說待補')),
+  ];
+}
+
+async function dashboardPage(slug) {
+  const p = await personData(PROFILES.some((x) => x.slug === slug) ? slug : ME.slug);
+  const doc = p.doc || {};
+  const latest = p.index.find((x) => x.date <= today()) || p.index[0];
+  const coach = p.index.find((x) => x.date <= today() && x.coach)?.coach;
+  const activity = core.dayActivity(doc);
+  const days = Object.keys(activity);
+  const minutes = Object.values(activity).map((a) => a.minutes).filter(Boolean);
+  const results = doc.results || {};
+  const answered = Object.values(results).reduce((n, d) => n + Object.keys(d || {}).length, 0);
+  const completed = p.index.filter((x) => SECTIONS.every((s) => doc.done?.[x.date]?.[s.id])).length;
+  const switcher = PROFILES.length > 1 ? h('div', { class: 'seg', role: 'group', 'aria-label': '看誰的進度' },
+    PROFILES.map((x) => h('a', { class: x.slug === p.slug ? 'on' : '', href: x.slug === ME.slug ? '#/progress' : `#/progress/${x.slug}` },
+      x.slug === ME.slug ? `${x.name}（我）` : x.name))) : null;
+  return h('div', { class: 'page dash' },
+    h('p', { class: 'eyebrow' }, '進度・Dashboard'),
+    switcher,
+    h('h1', { class: 'headline' }, `${p.self ? '' : `${p.name}・`}目前等級 ${latest?.level || '—'}`),
     h('p', { class: 'lede' }, coach?.level_reason_zh || '做完幾課之後，這裡會說明升降級的判斷。'),
-    connected ? null : h('a', { class: 'card notice', href: '#/settings' },
+    p.self && !p.synced ? h('a', { class: 'card notice', href: '#/settings' },
       h('strong', {}, '還沒開啟跨裝置同步'),
-      h('span', { class: 'muted' }, '每天出題的時候看不到你的作答紀錄，就沒辦法針對弱點加強或調整難度。到設定頁花一分鐘連線。')),
-    h('h2', { class: 'section-title' }, '五項能力'),
-    h('p', { class: 'muted' }, lessons ? `最近 ${lessons} 課的正確率（這台裝置加上已同步的紀錄）` : '還沒有作答紀錄。'),
-    skillBars(stats),
-    coach?.focus_zh?.length ? [h('h2', { class: 'section-title' }, '今天的加強重點'), h('ul', { class: 'plain' }, coach.focus_zh.map((f) => h('li', {}, f)))] : null,
-    h('h2', { class: 'section-title' }, '要加強的文法'),
-    coach?.weak_grammar?.length
-      ? h('ul', { class: 'plain' }, coach.weak_grammar.map((g) => h('li', {}, g.point, h('span', { class: 'muted' }, `　正確率 ${pct(g.acc)}・${g.n} 題`))))
-      : h('p', { class: 'muted' }, '目前沒有。某個文法答對率低於 70%（至少 3 題）時，之後的課會加入複習題。'),
-    h('h2', { class: 'section-title' }, '常忘的單字'),
-    weakWords.length
-      ? h('ul', { class: 'plain' }, weakWords.map(([w, c]) => h('li', {}, h('strong', {}, deckByWord.get(w)?.word || w), '　', deckByWord.get(w)?.zh || '',
-        h('span', { class: 'muted' }, c.lapses ? `　忘了 ${c.lapses} 次` : '　有點難'))))
-      : h('p', { class: 'muted' }, '目前沒有。複習時按「忘了」或「有點難」的字會列在這裡，並更常出現在新課裡。'),
-    h('h2', { class: 'section-title' }, '老師批改紀錄'),
-    Object.keys(FEEDBACK).length
-      ? h('ul', { class: 'plain' }, Object.keys(FEEDBACK).sort().reverse().map((d) => h('li', {},
-        h('a', { href: `#/l/${d}/write` }, `${formatDate(d)}・${FEEDBACK[d].score}/10`), h('span', { class: 'muted' }, `　${(FEEDBACK[d].items || []).length} 處修改`))))
-      : h('p', { class: 'muted' }, '交卷後老師會在當天批改（9、12、18、22 點），批改過的作文會列在這裡。'),
-    h('h2', { class: 'section-title' }, '累計'),
-    h('div', { class: 'stats' }, stat(`${completed}`, '完成的課'), stat(`${challenges}`, '挑戰加練'),
-      stat(`${Object.keys(S.srs).length}`, '學過的字'), stat(`${practiced}`, '自由練習題')),
-    h('a', { class: 'card notice', href: '#/history' },
-      h('strong', {}, `所有課程（${INDEX.length}）在「紀錄」`), h('span', { class: 'muted' }, '每天的練習都在那裡，可以回去複習，也可以補寫漏掉的題目。')));
+      h('span', { class: 'muted' }, '每天出題和學習顧問都看不到你的作答紀錄。到設定頁花一分鐘連線。')) : null,
+    !p.self && !p.doc ? h('div', { class: 'card notice' }, h('strong', {}, `這台裝置看不到 ${p.name} 的作答紀錄`),
+      h('span', { class: 'muted' }, '開啟跨裝置同步（貼上同一個 token）後，就能在這裡看到對方的進度。')) : null,
+    advisorCard(p, p.advisor || {}),
+    h('div', { class: 'stats' }, stat(`${core.streakOf(days, today())}`, '連續天數'), stat(`${days.length}`, '練習天數'),
+      stat(`${completed}`, '完成的課'), stat(`${answered}`, '答題數')),
+    dashSection('學習日曆', '最近 8 週，顏色越深練得越久。', calendarHeatmap(activity)),
+    dashSection('五項能力', '每一課的正確率；數字是最近 3 課的平均，有 5 課以上時箭頭和更早的課比。點一列看每課的分數。', skillTrends(results)),
+    dashSection('等級歷程', null, levelJourney(p.index)),
+    dashSection('文法掌握', '每個學過的文法點（含複習題）的正確率。', grammarBars(core.grammarMastery(results, p.index))),
+    dashSection('單字', null, vocabBlock(doc, p.deck)),
+    dashSection('作文分數', null, essayBlock(p)),
+    dashSection('練習習慣', null, habitsBlock(doc, minutes, doc.profile?.minutes)),
+    p.self ? h('a', { class: 'card notice', href: '#/history' },
+      h('strong', {}, `所有課程（${INDEX.length}）在「紀錄」`), h('span', { class: 'muted' }, '每天的練習都在那裡，可以回去複習，也可以補寫漏掉的題目。')) : null);
 }
 
 // --- History --------------------------------------------------------------------------------
@@ -2073,7 +2310,7 @@ async function route() {
     else if (parts[0] === 'l' && parts.length >= 3) page = await sectionPage(parts[1], parts[2]);
     else if (parts[0] === 'review') { tab = 'review'; page = reviewPage(); }
     else if (parts[0] === 'practice') { tab = 'practice'; page = await practicePage(parts[1]); }
-    else if (parts[0] === 'progress') { tab = 'progress'; page = progressPage(); }
+    else if (parts[0] === 'progress') { tab = 'progress'; page = await dashboardPage(parts[1] || ME.slug); }
     else if (parts[0] === 'history' || parts[0] === 'archive') { tab = 'history'; page = historyPage(); }
     else if (parts[0] === 'settings') { tab = 'settings'; page = settingsPage(); }
     else if (parts[0] === 'goals') { tab = 'settings'; page = goalsPage(); }
