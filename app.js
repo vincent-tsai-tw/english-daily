@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=eebff1b77c';
-import * as speech from './speech.js?v=eebff1b77c';
-import * as sync from './sync.js?v=eebff1b77c';
+import * as core from './core.js?v=190bdd7b77';
+import * as speech from './speech.js?v=190bdd7b77';
+import * as sync from './sync.js?v=190bdd7b77';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -1196,13 +1196,25 @@ function suggestedSection(coach, done) {
   return section && !done[section.id] ? { section, reason } : null;
 }
 
+const SECTION_IDS = SECTIONS.map((s) => s.id);
+const sectionById = (id) => SECTIONS.find((s) => s.id === id) || null;
+
+// Today's suggestion (weakest skill), only for the current lesson.
+function suggestionFor(date) {
+  return date === currentLessonDate() ? suggestedSection(entryFor(date).coach, S.done[date] || {}) : null;
+}
+
+function nextSectionOf(date, after = null) {
+  return sectionById(core.nextSection(SECTION_IDS, S.done[date] || {}, suggestionFor(date)?.section.id, after));
+}
+
 async function homePage(date) {
   const L = await lesson(date);
   const entry = entryFor(date);
   const done = S.done[date] || {};
   const finished = SECTIONS.filter((s) => done[s.id]).length;
-  const suggested = date === currentLessonDate() ? suggestedSection(entry.coach, done) : null;
-  const next = suggested?.section || SECTIONS.find((s) => !done[s.id]);
+  const suggested = suggestionFor(date);
+  const next = nextSectionOf(date);
   const isCurrent = date === currentLessonDate();
   const notToday = isCurrent && date !== today();
   const queue = reviewQueue();
@@ -1222,18 +1234,18 @@ async function homePage(date) {
     h('p', { class: 'sync-line', id: 'sync-line' }),
     isCurrent ? coachCard(entry.coach) : null,
     next
-      ? h('a', { class: 'btn primary wide', href: `#/l/${date}/${next.id}` }, suggested ? `先做：${next.zh}` : finished ? `繼續：${next.zh}` : '開始今天的課')
+      ? h('a', { class: 'btn primary wide', href: `#/l/${date}/${next.id}` }, finished ? `繼續：${next.zh}` : '開始今天的課：單字')
       : h('p', { class: 'done-note' }, icon('check'), '這一課全部完成了！'),
     !S.profile?.t ? h('a', { class: 'card notice', href: '#/goals' },
       h('strong', {}, '告訴老師你的目標和興趣'), h('span', { class: 'muted' }, '花 30 秒選一選，之後的課會更貼近你想用英文的地方。')) : null,
     pending.length ? h('a', { class: 'card notice', href: `#/l/${pending[0].split('|')[0]}/speak` },
       h('strong', {}, `口說待補 ${pending.length} 題`), h('span', { class: 'muted' }, '在外面時先默念或打字的題目，回家花幾分鐘用說的補完。')) : null,
-    suggested ? h('div', { class: 'card coach' }, h('p', { class: 'coach-head' }, `今天建議先做：${suggested.section.zh}`),
+    suggested ? h('div', { class: 'card coach' }, h('p', { class: 'coach-head' }, `單字之後先做：${suggested.section.zh}`),
       h('p', { class: 'muted' }, suggested.reason)) : null,
     h('h2', { class: 'section-title' }, '今天的六節'),
     h('ul', { class: 'section-list' }, SECTIONS.map((s) => h('li', {},
       h('a', { href: `#/l/${date}/${s.id}`, class: done[s.id] ? 'done' : '' },
-        h('span', { class: 'sec-name' }, s.zh, h('small', {}, s.en), s === suggested?.section ? h('span', { class: 'tag' }, '先做') : null),
+        h('span', { class: 'sec-name' }, s.zh, h('small', {}, s.en), s === suggested?.section ? h('span', { class: 'tag' }, '加強') : null),
         h('span', { class: 'sec-sub' }, s.sub(L)),
         h('span', { class: 'sec-meta' }, done[s.id] ? icon('check') : `${s.min} 分`))))),
     challengeCard(L, !next),
@@ -1248,11 +1260,12 @@ async function sectionPage(date, id) {
   const idx = SECTIONS.findIndex((s) => s.id === id);
   if (idx < 0) throw new Error('找不到這一節');
   const s = SECTIONS[idx];
-  const next = SECTIONS[idx + 1];
+  const next = nextSectionOf(date, id);
   const finish = () => {
     completeSection(L, id);
-    location.hash = next ? `#/l/${date}/${next.id}` : `#/l/${date}`;
-    if (!next) toast(L.challenge ? '今天的課完成了！挑戰加練已解鎖。' : '今天的課完成了，記得做單字複習！');
+    const then = nextSectionOf(date, id);
+    location.hash = then ? `#/l/${date}/${then.id}` : `#/l/${date}`;
+    if (!then) toast(L.challenge ? '今天的課完成了！挑戰加練已解鎖。' : '今天的課完成了，記得做單字複習！');
   };
   return h('div', { class: 'page' },
     h('nav', { class: 'crumbs' }, h('a', { href: `#/l/${date}` }, `‹ ${formatDate(date)}`), h('span', {}, `${idx + 1} / ${SECTIONS.length}`)),

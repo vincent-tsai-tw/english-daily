@@ -166,6 +166,17 @@ export function formulaParts(form) {
 // Position (percent across the track) of a timeline point from -3 (long ago) to 3 (later).
 export const timelinePct = (v) => 6 + ((Math.max(-3, Math.min(3, v)) + 3) / 6) * 88;
 
+// Order to work through a lesson: vocabulary first (its words come back in the reading and
+// dialogue), then the suggested weakest skill, then the rest in list order.
+export function sectionOrder(ids, suggested) {
+  return [...new Set([ids[0], suggested, ...ids].filter(Boolean))];
+}
+
+// The section to go to after finishing `after`: the first unfinished one in that order.
+export function nextSection(ids, done, suggested, after) {
+  return sectionOrder(ids, suggested).find((id) => id !== after && !done[id]) || null;
+}
+
 export function normalizeAnswer(s) {
   return String(s).toLowerCase().replace(/’/g, "'").replace(/[.!?,;:]+$/g, '').replace(/\s+/g, ' ').trim();
 }
