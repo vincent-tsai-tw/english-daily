@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=ecada2802b';
-import * as speech from './speech.js?v=ecada2802b';
-import * as sync from './sync.js?v=ecada2802b';
+import * as core from './core.js?v=0608eb8153';
+import * as speech from './speech.js?v=0608eb8153';
+import * as sync from './sync.js?v=0608eb8153';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -92,6 +92,18 @@ function setAns(date, key, value, score) {
   }
   touch();
   save();
+  paintTodo();
+}
+
+const answered = (date, key) => { const v = ans(date, key); return v != null && v !== ''; };
+
+// Answerable items carry data-ans="<date>|<key>"; `.todo` marks the unanswered ones, which the
+// history tab's links (#/l/<date>/<section>/todo) highlight and scroll to.
+function paintTodo() {
+  document.querySelectorAll('[data-ans]').forEach((el) => {
+    const [date, key] = el.dataset.ans.split('|');
+    el.classList.toggle('todo', !answered(date, key));
+  });
 }
 
 const answerStore = (date, key) => ({
@@ -210,7 +222,7 @@ let updateReady = false;
 // Pages without anything half-typed: safe to re-render or reload.
 function isIdleRoute() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  return !parts.length || (parts[0] === 'l' && parts.length === 2) || parts[0] === 'progress' || parts[0] === 'archive';
+  return !parts.length || (parts[0] === 'l' && parts.length === 2) || ['progress', 'archive', 'history'].includes(parts[0]);
 }
 
 function refreshIfIdle() {
@@ -683,7 +695,7 @@ function fillQ(item, store, onResult) {
 const exercise = (item, store, onResult) => (item.type === 'fill' ? fillQ : mcq)(item, store, onResult);
 
 function questionList(L, kind, items) {
-  return h('ol', { class: 'questions' }, items.map((item, i) => h('li', {},
+  return h('ol', { class: 'questions' }, items.map((item, i) => h('li', { 'data-ans': `${L.date}|${kind}.${i}` },
     exercise(item, answerStore(L.date, `${kind}.${i}`), (ok) => recordMistake({ date: L.date, kind, i }, ok)))));
 }
 
@@ -716,7 +728,7 @@ function dictationItem(date, key, n, sentence) {
   const input = sentenceField('打出你聽到的句子', check);
   const prev = ans(date, key);
   if (prev) { input.value = prev; show(prev); }
-  return h('div', { class: 'card' },
+  return h('div', { class: 'card', 'data-ans': `${date}|${key}` },
     h('div', { class: 'row' }, h('span', { class: 'num' }, `${n}`), sayBtn(sentence, '播放'), slowBtn(sentence)),
     input,
     h('button', { class: 'btn', type: 'button', onclick: check }, '對答案'),
@@ -843,7 +855,7 @@ function shadowItem(L, i, sentence) {
   const action = voiceMode()
     ? [micButton({ label: '跟讀', onText: (t) => { live.textContent = t; }, onDone: done }), laterButton(id)]
     : h('button', { class: 'btn', type: 'button', onclick: () => { setAns(L.date, key, 'quiet'); addPending(id); show('quiet'); } }, '已默念 3 次');
-  return h('div', { class: 'card' },
+  return h('div', { class: 'card', 'data-ans': `${L.date}|${key}` },
     h('p', { class: 'shadow-text' }, sentence),
     h('div', { class: 'row' }, sayBtn(sentence, '聽'), slowBtn(sentence), action),
     recordRow(sentence),
@@ -915,7 +927,7 @@ function promptItem(L, i, p) {
       onclick: () => { if (!box.value.trim()) return; setAns(L.date, key, box.value.trim()); addPending(id); show(box.value.trim(), false); },
     }, '完成（記到口說待補）')];
   }
-  return h('div', { class: 'card' },
+  return h('div', { class: 'card', 'data-ans': `${L.date}|${key}` },
     h('p', { class: 'prompt-q' }, p.question),
     h('p', { class: 'zh-sub' }, p.question_zh),
     h('ul', { class: 'hints' }, p.hints.map((x) => h('li', {}, x))),
@@ -963,7 +975,7 @@ function translationItem(date, i, t) {
     show(value);
   };
   if (ans(date, key)) show(ans(date, key));
-  return h('div', { class: 'card' }, h('p', { class: 'zh-big' }, t.zh), input,
+  return h('div', { class: 'card', 'data-ans': `${date}|${key}` }, h('p', { class: 'zh-big' }, t.zh), input,
     h('button', { class: 'btn', type: 'button', onclick: check }, '對照答案'), out);
 }
 
@@ -998,7 +1010,7 @@ function writingFeedback(L, text) {
 
 function writeSection(L) {
   const w = L.writing;
-  const area = h('textarea', { class: 'field essay', rows: 10, placeholder: 'Write your email here…', spellcheck: 'true' }, ans(L.date, 'write.draft') || '');
+  const area = h('textarea', { class: 'field essay', rows: 10, placeholder: 'Write your email here…', spellcheck: 'true', 'data-ans': `${L.date}|write.submitted` }, ans(L.date, 'write.draft') || '');
   const chips = h('div', { class: 'chips' });
   const count = h('span', { class: 'count' });
   const feedback = h('div');
@@ -1344,6 +1356,58 @@ function mistakesPanel() {
 
 // --- Free practice --------------------------------------------------------------------------
 
+// Press and drag a chip inside `container` to a new position (mouse or finger). `onDrop(from, to)`
+// gets the chip's old and new index; a tap without movement still fires the chip's click.
+let dragEndedAt = 0;
+const justDragged = () => Date.now() - dragEndedAt < 400;
+
+function dragToReorder(chip, container, onDrop) {
+  chip.addEventListener('pointerdown', (e) => {
+    if (chip.disabled || e.button > 0) return;
+    const chips = () => [...container.querySelectorAll('.chip')];
+    const from = chips().indexOf(chip);
+    const start = { x: e.clientX, y: e.clientY };
+    let ghost = null;
+    let grab = null;
+    const move = (ev) => {
+      if (!ghost) {
+        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+        const r = chip.getBoundingClientRect();
+        grab = { x: start.x - r.left, y: start.y - r.top };
+        ghost = chip.cloneNode(true);
+        ghost.classList.add('drag-ghost');
+        ghost.style.width = `${r.width}px`;
+        document.body.append(ghost);
+        chip.classList.add('drag-source');
+      }
+      ghost.style.left = `${ev.clientX - grab.x}px`;
+      ghost.style.top = `${ev.clientY - grab.y}px`;
+      // Place the chip before the first chip the pointer is ahead of, in reading order.
+      let before = null;
+      for (const c of chips()) {
+        if (c === chip) continue;
+        const r = c.getBoundingClientRect();
+        const sameRow = ev.clientY >= r.top - 6 && ev.clientY <= r.bottom + 6;
+        if (ev.clientY < r.top - 6 || (sameRow && ev.clientX < r.left + r.width / 2)) { before = c; break; }
+      }
+      if (chip.nextElementSibling !== before && chip !== before) container.insertBefore(chip, before);
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      if (!ghost) return;
+      ghost.remove();
+      chip.classList.remove('drag-source');
+      dragEndedAt = Date.now();
+      onDrop(from, chips().indexOf(chip));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  });
+}
+
 // Pick a random item not shown in this round; with `weak`, half the picks come from it.
 function picker() {
   const seen = new Set();
@@ -1468,7 +1532,14 @@ async function practicePage(requested) {
       const out = h('div');
       let locked = false;
       const paint = () => {
-        put(answer, chosen.length ? chosen.map((b) => h('button', { type: 'button', class: 'chip on', disabled: locked, onclick: () => { chosen = chosen.filter((x) => x !== b); bank.push(b); paint(); } }, b.w)) : h('span', { class: 'muted' }, '點下面的字，排成正確的句子'));
+        put(answer, chosen.length ? chosen.map((b) => {
+          const chip = h('button', {
+            type: 'button', class: 'chip on', disabled: locked,
+            onclick: () => { if (justDragged()) return; chosen = chosen.filter((x) => x !== b); bank.push(b); paint(); },
+          }, b.w);
+          dragToReorder(chip, answer, (from, to) => { const [moved] = chosen.splice(from, 1); chosen.splice(to, 0, moved); paint(); });
+          return chip;
+        }) : h('span', { class: 'muted' }, '點下面的字，排成正確的句子'));
         put(pool_, bank.map((b) => h('button', { type: 'button', class: 'chip', disabled: locked, onclick: () => { bank = bank.filter((x) => x !== b); chosen.push(b); paint(); } }, b.w)));
       };
       const check = () => {
@@ -1484,7 +1555,8 @@ async function practicePage(requested) {
       };
       const checkBtn = h('button', { class: 'btn', type: 'button', onclick: check }, '檢查');
       paint();
-      return { card: practiceCard([s.zh ? h('p', { class: 'zh-big' }, s.zh) : h('p', { class: 'muted' }, '把這些字排成一句話'), answer, pool_, out], [checkBtn, nextBtn]) };
+      return { card: practiceCard([s.zh ? h('p', { class: 'zh-big' }, s.zh) : h('p', { class: 'muted' }, '把這些字排成一句話'), answer,
+        h('p', { class: 'hint' }, '按住已排好的字左右拖曳可以換位置；點一下拿回下面。'), pool_, out], [checkBtn, nextBtn]) };
     },
     trans: () => {
       const t = pick(pool.translate);
@@ -1581,15 +1653,84 @@ function progressPage() {
     h('h2', { class: 'section-title' }, '累計'),
     h('div', { class: 'stats' }, stat(`${completed}`, '完成的課'), stat(`${challenges}`, '挑戰加練'),
       stat(`${Object.keys(S.srs).length}`, '學過的字'), stat(`${practiced}`, '自由練習題')),
-    h('h2', { class: 'section-title' }, `所有課程（${INDEX.length}）`),
-    h('ul', { class: 'archive' }, INDEX.map((x) => {
-      const n = SECTIONS.filter((s) => isDone(x.date, s.id)).length;
-      return h('li', {}, h('a', { href: `#/l/${x.date}` },
-        h('span', { class: 'arc-date' }, formatDate(x.date), h('small', {}, `${x.track === 'work' ? '職場' : '生活'}・${x.level}`)),
-        h('span', { class: 'arc-title' }, x.theme_zh, h('small', {}, x.theme)),
-        h('span', { class: 'arc-meta' }, x.grammar),
-        h('span', { class: `arc-prog${n === SECTIONS.length ? ' full' : ''}` }, `${n}/${SECTIONS.length}`, isDone(x.date, 'challenge') ? '＋' : '')));
-    })));
+    h('a', { class: 'card notice', href: '#/history' },
+      h('strong', {}, `所有課程（${INDEX.length}）在「紀錄」`), h('span', { class: 'muted' }, '每天的練習都在那裡，可以回去複習，也可以補寫漏掉的題目。')));
+}
+
+// --- History --------------------------------------------------------------------------------
+
+const SECTION_ITEMS = { read: ['read'], grammar: ['grammar', 'review'], listen: ['listen', 'dict'], speak: ['shadow', 'prompt'], write: ['trans', 'write'] };
+const CHALLENGE_ITEMS = ['ch.read', 'ch.listen', 'ch.dict'];
+let historyFilter = 'all';
+
+function itemKeys(entry, prefixes) {
+  return prefixes.flatMap((p) => {
+    const n = entry.items?.[p] || 0;
+    return p === 'write' ? (n ? ['write.submitted'] : []) : Array.from({ length: n }, (_, i) => `${p}.${i}`);
+  });
+}
+
+// {total, missing} answerable items for a section of a lesson.
+function itemStatus(entry, prefixes) {
+  const keys = itemKeys(entry, prefixes);
+  return { total: keys.length, missing: keys.filter((k) => !answered(entry.date, k)).length };
+}
+
+function historyRows() {
+  return INDEX.filter((x) => x.date <= today()).map((x) => {
+    const secs = Object.fromEntries(Object.entries(SECTION_ITEMS).map(([id, p]) => [id, itemStatus(x, p)]));
+    // A section counts as skipped once its day is over, or once the learner started or finished it.
+    const missed = (id) => {
+      const st = secs[id];
+      return st.missing && (x.date < today() || isDone(x.date, id) || st.missing < st.total) ? st.missing : 0;
+    };
+    const total = Object.keys(SECTION_ITEMS).reduce((n, id) => n + missed(id), 0);
+    return { x, secs, missed, total, ch: x.challenge ? itemStatus(x, CHALLENGE_ITEMS) : null };
+  });
+}
+
+function historyRow({ x, missed, ch }) {
+  const n = SECTIONS.filter((s) => isDone(x.date, s.id)).length;
+  const chip = (cls, href, ...kids) => h('a', { class: `h-sec${cls ? ` ${cls}` : ''}`, href }, ...kids);
+  const chips = SECTIONS.map((s) => {
+    const m = SECTION_ITEMS[s.id] ? missed(s.id) : 0;
+    if (m) return chip('miss', `#/l/${x.date}/${s.id}/todo`, `${s.zh} 漏 ${m}`);
+    if (isDone(x.date, s.id)) return chip('ok', `#/l/${x.date}/${s.id}`, icon('check'), s.zh);
+    return chip('', `#/l/${x.date}/${s.id}`, s.zh);
+  });
+  if (ch) {
+    const started = ch.missing < ch.total || isDone(x.date, 'challenge');
+    chips.push(!ch.missing ? chip('ok', `#/l/${x.date}/challenge`, icon('check'), '挑戰')
+      : started ? chip('miss', `#/l/${x.date}/challenge/todo`, `挑戰 漏 ${ch.missing}`)
+        : chip('', `#/l/${x.date}/challenge`, `挑戰 ${x.challenge}`));
+  }
+  const fb = FEEDBACK[x.date];
+  if (fb) chips.push(chip('ok', `#/l/${x.date}/write`, `作文 ${fb.score}/10`));
+  return h('li', { class: 'card history-card' },
+    h('div', { class: 'h-top' },
+      h('span', { class: 'h-date' }, formatDate(x.date), x.date === today() ? h('span', { class: 'tag' }, '今天') : null),
+      h('span', { class: `arc-prog${n === SECTIONS.length ? ' full' : ''}` }, `${n}/${SECTIONS.length}`)),
+    h('a', { class: 'h-title', href: `#/l/${x.date}` }, x.theme_zh, h('small', {}, `${x.theme}・${x.level}`)),
+    h('div', { class: 'h-secs' }, chips));
+}
+
+function historyPage() {
+  const rows = historyRows();
+  const missingDays = rows.filter((r) => r.total).length;
+  const totalMissing = rows.reduce((n, r) => n + r.total, 0);
+  const shown = historyFilter === 'missing' ? rows.filter((r) => r.total) : rows;
+  const seg = h('div', { class: 'seg', role: 'group', 'aria-label': '篩選' },
+    [['all', `全部（${rows.length}）`], ['missing', `有漏寫（${missingDays}）`]].map(([k, label]) => h('button', {
+      type: 'button', class: historyFilter === k ? 'on' : '', onclick: () => { historyFilter = k; route(); },
+    }, label)));
+  return h('div', { class: 'page' },
+    h('p', { class: 'eyebrow' }, '練習紀錄・History'),
+    h('h1', { class: 'headline' }, '每天的練習'),
+    h('p', { class: 'lede' }, totalMissing
+      ? `還有 ${totalMissing} 題沒寫。點紅色標籤會直接跳到那一節，沒寫的題目會用虛線框起來。`
+      : '每一課的題目都寫完了。點任何一天都可以回去複習。'),
+    h('div', { class: 'toolbar' }, seg),
+    shown.length ? h('ul', { class: 'history' }, shown.map(historyRow)) : h('p', { class: 'muted' }, '沒有漏寫的題目，太棒了。'));
 }
 
 // --- Settings -------------------------------------------------------------------------------
@@ -1845,19 +1986,22 @@ async function route() {
   let tab = 'home';
   try {
     let page;
-    if (!INDEX.length && !['settings', 'review', 'progress'].includes(parts[0])) page = welcomePage();
+    if (!INDEX.length && !['settings', 'review', 'progress', 'history'].includes(parts[0])) page = welcomePage();
     else if (!parts.length) page = await homePage(currentLessonDate());
     else if (parts[0] === 'l' && parts.length === 2) page = await homePage(parts[1]);
     else if (parts[0] === 'l' && parts[2] === 'challenge') page = await challengePage(parts[1]);
-    else if (parts[0] === 'l' && parts.length === 3) page = await sectionPage(parts[1], parts[2]);
+    else if (parts[0] === 'l' && parts.length >= 3) page = await sectionPage(parts[1], parts[2]);
     else if (parts[0] === 'review') { tab = 'review'; page = reviewPage(); }
     else if (parts[0] === 'practice') { tab = 'practice'; page = await practicePage(parts[1]); }
-    else if (parts[0] === 'progress' || parts[0] === 'archive') { tab = 'progress'; page = progressPage(); }
+    else if (parts[0] === 'progress') { tab = 'progress'; page = progressPage(); }
+    else if (parts[0] === 'history' || parts[0] === 'archive') { tab = 'history'; page = historyPage(); }
     else if (parts[0] === 'settings') { tab = 'settings'; page = settingsPage(); }
     else if (parts[0] === 'goals') { tab = 'settings'; page = goalsPage(); }
     else throw new Error('找不到這個頁面');
-    if (parts[0] === 'l' && parts[1] !== currentLessonDate()) tab = 'progress';
+    if (parts[0] === 'l' && parts[1] !== currentLessonDate()) tab = 'history';
     put(view, page);
+    view.classList.toggle('show-todo', parts[3] === 'todo');
+    paintTodo();
   } catch (err) {
     put(view, errorBox(err));
   }
@@ -1865,6 +2009,7 @@ async function route() {
   paintSyncLine();
   updateBadge();
   window.scrollTo(0, 0);
+  if (parts[3] === 'todo') requestAnimationFrame(() => view.querySelector('.todo')?.scrollIntoView({ block: 'center' }));
 }
 
 async function boot() {
