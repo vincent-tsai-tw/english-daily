@@ -2,9 +2,9 @@
 // for them) and the Syncer between this device and the gist. Pages import these; nothing else
 // holds application state at module level.
 
-import { Store } from './store.js?v=98a517667b';
-import { Library } from './library.js?v=98a517667b';
-import { Syncer } from './sync.js?v=98a517667b';
+import { Store } from './store.js?v=4fbc7a9ae0';
+import { Library } from './library.js?v=4fbc7a9ae0';
+import { Syncer } from './sync.js?v=4fbc7a9ae0';
 
 export const store = new Store();
 export const library = new Library(store);

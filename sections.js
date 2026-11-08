@@ -1,9 +1,9 @@
 // The six sections of a lesson and the order the learner should do them in: vocabulary first,
 // then the weakest skill, then the rest (core.sectionOrder / core.nextSection).
 
-import * as core from './core.js?v=98a517667b';
-import { store, library } from './state.js?v=98a517667b';
-import { pct } from './dom.js?v=98a517667b';
+import * as core from './core.js?v=4fbc7a9ae0';
+import { store, library } from './state.js?v=4fbc7a9ae0';
+import { pct } from './dom.js?v=4fbc7a9ae0';
 
 const SECTION_INFO = {
   vocab: { zh: '單字', en: 'Vocabulary', min: 4, sub: (L) => `${L.vocab.slice(0, 4).map((v) => v.word).join('、')}…` },

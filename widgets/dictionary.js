@@ -1,11 +1,11 @@
 // Tap any English word to look it up: the offline ECDICT subset first (following inflections to
 // the base word), a free online dictionary for the rest, and a button that saves it to the deck.
 
-import { store, library } from '../state.js?v=98a517667b';
-import { wkey } from '../store.js?v=98a517667b';
-import { h, icon, put, showSheet } from '../dom.js?v=98a517667b';
-import { sayBtn } from './audio.js?v=98a517667b';
-import { updateBadge } from '../pages/shell.js?v=98a517667b';
+import { store, library } from '../state.js?v=4fbc7a9ae0';
+import { wkey } from '../store.js?v=4fbc7a9ae0';
+import { h, icon, put, showSheet } from '../dom.js?v=4fbc7a9ae0';
+import { sayBtn } from './audio.js?v=4fbc7a9ae0';
+import { updateBadge } from '../pages/shell.js?v=4fbc7a9ae0';
 
 const WORD_CHARS = /[A-Za-z'’-]/;
 export const LOOKUP_IN = '.reading, .said, .example, .sample, .shadow-text, .prompt-q, .q-text, .ref, .fixed, .orig, .def, .heard';
