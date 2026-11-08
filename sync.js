@@ -1,97 +1,85 @@
-// Cross-device sync of learner progress through one secret GitHub gist, one file per learner
-// (fileFor). The token (classic, gist scope only) is kept in this browser under CONFIG_KEY and is
-// never written into the gist. scripts/gist_sync.py reads the same files to adapt daily lessons.
+// Cross-device sync of the learner's progress: pull their document from the gist, merge it with
+// this device's copy (core.mergeDocs: every entry carries a timestamp, the newer one wins) and
+// push the result. The same pass picks up the teacher's essay feedback and the advisor's reports,
+// which only the Mac writes. gist.js is the GitHub API client; the token stays on each device.
 
-const API = 'https://api.github.com';
-export const GIST_DESCRIPTION = 'english-daily progress';
-export const fileFor = (slug) => `english-daily-progress-${slug}.json`; // as scripts/progress.py
-export const feedbackFor = (slug) => `english-daily-feedback-${slug}.json`; // written only by the grading job
-export const advisorFor = (slug) => `english-daily-advisor-${slug}.json`; // written only by the daily lesson job
-export const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=English%20Daily%20sync';
-const CONFIG_KEY = 'english-daily:sync';
+import * as core from './core.js?v=98a517667b';
+import * as gist from './gist.js?v=98a517667b';
 
-export function loadConfig() {
-  try { return JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}') || {}; } catch { return {}; }
-}
+const SYNC_DELAY_MS = 4000;
+export const PULL_EVERY_MS = 60000;
 
-export function saveConfig(config) {
-  try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* storage blocked */ }
-}
-
-export function clearConfig() {
-  try { localStorage.removeItem(CONFIG_KEY); } catch { /* storage blocked */ }
-}
-
-async function api(token, path, { method = 'GET', body } = {}) {
-  let res;
-  try {
-    res = await fetch(API + path, {
-      method,
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token}`,
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new Error('連不上 GitHub，請確認網路後再試。');
+export class Syncer {
+  constructor(store, library) {
+    this.store = store;
+    this.library = library;
+    this.timer = null;
+    this.running = null; // the in-flight sync, so concurrent callers share it
+    this.onFeedback = () => {}; // set by the app: new teacher feedback arrived
+    this.onError = (err) => {}; // set by the app: a manual sync failed
   }
-  if (res.status === 401) throw new Error('token 無效或已過期，請重新建立一個。');
-  if (res.status === 403 || res.status === 404) throw new Error('token 沒有 gist 權限：建立時要勾選「gist」。');
-  if (!res.ok) throw new Error(`GitHub 回應錯誤（${res.status}），稍後再試。`);
-  return { data: await res.json(), headers: res.headers };
-}
 
-// Check the token and return the GitHub login it belongs to.
-export async function whoAmI(token) {
-  const { data, headers } = await api(token, '/user');
-  const scopes = headers.get('X-OAuth-Scopes');
-  if (scopes !== null && !scopes.split(',').map((s) => s.trim()).includes('gist')) {
-    throw new Error('這個 token 沒有勾「gist」權限，請重新建立。');
+  get config() { return gist.loadConfig(); }
+  get connected() { const c = this.config; return Boolean(c.token && c.gistId); }
+
+  // Push soon after a change, coalescing bursts of answers.
+  schedule() {
+    if (!this.config.gistId) return;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.now(), SYNC_DELAY_MS);
   }
-  return data.login;
-}
 
-// Return the id of the progress gist, creating a secret one with `initial` in `file` if needed.
-export async function findOrCreateGist(token, file, initial) {
-  for (let page = 1; page <= 10; page++) {
-    const { data } = await api(token, `/gists?per_page=100&page=${page}`);
-    const hit = data.find((g) => g.description === GIST_DESCRIPTION);
-    if (hit) return hit.id;
-    if (data.length < 100) break;
+  // Pull, merge and push. Resolves true when the merge changed this device's data.
+  now({ manual = false } = {}) {
+    const cfg = this.config;
+    const { store, library } = this;
+    if (!cfg.token || !cfg.gistId || !store.me) return Promise.resolve(false);
+    if (this.running) return this.running;
+    const slug = store.slug;
+    const file = gist.fileFor(slug);
+    clearTimeout(this.timer);
+    this.running = (async () => {
+      try {
+        const before = core.syncDoc(store.state);
+        const files = await gist.readMany(cfg.token, cfg.gistId, [file, gist.feedbackFor(slug), gist.advisorFor(slug)]);
+        if (store.slug !== slug) return false; // the profile was switched meanwhile
+        const fb = files[gist.feedbackFor(slug)];
+        if (fb && typeof fb === 'object' && !core.sameDoc(fb, library.feedback)) {
+          library.setFeedback(slug, fb);
+          this.onFeedback();
+        }
+        const adv = files[gist.advisorFor(slug)];
+        if (adv && typeof adv === 'object' && !core.sameDoc(adv, library.advisor)) library.setAdvisor(slug, adv);
+        const raw = files[file];
+        const remote = raw ? core.syncDoc(core.migrateState(raw)) : null;
+        // Merge again with the live state: answers given while the request was in flight must not be lost.
+        const merged = core.mergeDocs(remote ? core.mergeDocs(before, remote) : before, core.syncDoc(store.state));
+        store.merge(merged);
+        if (!remote || !core.sameDoc(merged, remote)) await gist.write(cfg.token, cfg.gistId, file, merged);
+        store.dirty = false;
+        gist.saveConfig({ ...gist.loadConfig(), last: Date.now(), error: '' });
+        return !core.sameDoc(merged, before);
+      } catch (err) {
+        if (gist.loadConfig().token) gist.saveConfig({ ...gist.loadConfig(), error: err.message });
+        if (manual) this.onError(err);
+        return false;
+      } finally {
+        this.running = null;
+      }
+    })();
+    return this.running;
   }
-  const { data } = await api(token, '/gists', {
-    method: 'POST',
-    body: { description: GIST_DESCRIPTION, public: false, files: { [file]: { content: JSON.stringify(initial) } } },
-  });
-  return data.id;
-}
 
-// Read several files of the gist in one request: {file: document or null}.
-export async function readMany(token, id, files) {
-  const { data } = await api(token, `/gists/${id}`);
-  const out = {};
-  for (const file of files) {
-    const entry = data.files?.[file];
-    if (!entry) { out[file] = null; continue; }
-    let text = entry.content;
-    if (entry.truncated) {
-      const res = await fetch(entry.raw_url, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`讀取同步資料失敗（${res.status}）。`);
-      text = await res.text();
-    }
-    try { out[file] = JSON.parse(text); } catch { throw new Error('同步資料格式錯誤。'); }
+  // Push unsynced changes if there are any (before switching profiles or when the page hides).
+  flush() { return this.store.dirty ? this.now() : Promise.resolve(false); }
+
+  // Check the token, find or create the progress gist, and do a first sync.
+  async connect(token) {
+    const login = await gist.whoAmI(token);
+    const gistId = await gist.findOrCreateGist(token, gist.fileFor(this.store.slug), core.syncDoc(this.store.state));
+    gist.saveConfig({ token, gistId, login });
+    await this.now({ manual: true });
   }
-  return out;
-}
 
-// Read one learner's synced document; null when the gist has no file for them yet.
-export async function read(token, id, file) {
-  return (await readMany(token, id, [file]))[file];
-}
-
-export async function write(token, id, file, doc) {
-  await api(token, `/gists/${id}`, { method: 'PATCH', body: { files: { [file]: { content: JSON.stringify(doc) } } } });
+  disconnect() { gist.clearConfig(); }
 }

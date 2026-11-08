@@ -390,6 +390,7 @@ select.field { appearance: auto; }
   background: var(--fill); color: var(--text-2); vertical-align: 1px;
 }
 .level.up { background: var(--ok-tint); color: var(--ok); }
+.level.down { background: var(--bad-tint); color: var(--bad); }
 .qa-badge { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; color: var(--ok); font-size: 13px; border: none; background: none; padding: 0; cursor: pointer; font-family: inherit; }
 .qa-notes p { font-size: 15px; line-height: 1.5; }
 .teacher h3 { font-size: 16px; margin-top: 14px; }
@@ -400,7 +401,6 @@ select.field { appearance: auto; }
 .corrections .fixed { color: var(--ok); font-weight: 500; }
 .qa-notes p + p { margin-top: 8px; }
 .qa-badge .ico { width: 1em; height: 1em; }
-.level.down { background: var(--bad-tint); color: var(--bad); }
 .coach { background: var(--accent-tint); }
 .coach-head { font-weight: 600; font-size: 15px; color: var(--accent); }
 .coach ul, .plain { margin: 0; padding-left: 1.2em; font-size: 15px; }

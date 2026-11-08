@@ -118,7 +118,7 @@ function phrasePattern(phrase) {
   return tokens.map((t) => `\\b${escapeRe(stem(t))}[a-z0-9'-]*`).join(gap);
 }
 
-// Same rule as scripts/lessons.py mentions(): words in order, inflections and up to two
+// Same rule as english_daily/lessons.py mentions(): words in order, inflections and up to two
 // words in between allowed.
 export function mentions(text, phrase) {
   const p = phrasePattern(phrase);
@@ -186,6 +186,20 @@ export function checkFill(item, value) {
   return [item.answer, ...(item.accept || [])].some((a) => normalizeAnswer(a) === given);
 }
 
+export const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+// A translation scored against the reference and every accepted alternative.
+export const translationScore = (t, value) => Math.max(...[t.en, ...(t.alt || [])].map((r) => alignWords(r, value).score));
+
+// The automatic essay checks: word count within the task's range, every must-use phrase present.
+export function writingChecks(writing, text) {
+  const n = wordCount(text);
+  return [
+    { ok: n >= writing.min_words && n <= writing.max_words, label: `字數 ${n}（目標 ${writing.min_words}～${writing.max_words}）` },
+    ...writing.must_use.map((p) => ({ ok: mentions(text, p), label: `用到「${p}」` })),
+  ];
+}
+
 export function gradingPrompt({ level, task, mustUse, text }) {
   return [
     `你是一位英文寫作老師。請批改下面這篇 ${level} 程度學習者的英文作文。`,
@@ -220,7 +234,7 @@ const stamped = (x) => isObj(x) && 'v' in x && 't' in x;
 // devices can merge.
 export function migrateState(raw) {
   const s = isObj(raw) ? { ...raw } : {};
-  for (const key of SYNCED) if (!isObj(s[key])) s[key] = {};
+  for (const key of SYNCED) s[key] = isObj(s[key]) ? { ...s[key] } : {}; // copies: the input stays untouched
   for (const [date, items] of Object.entries(s.answers)) {
     s.answers[date] = Object.fromEntries(Object.entries(items || {}).map(([k, v]) => [k, stamped(v) ? v : { v, t: 0 }]));
   }
@@ -320,16 +334,119 @@ export function stableStringify(x) {
 
 export const sameDoc = (a, b) => stableStringify(a) === stableStringify(b);
 
-// --- Skill statistics (same prefixes as scripts/progress.py SKILLS) ---------------------------
+// --- Answer keys (the same table as english_daily/lessons.py ITEMS) ---------------------------
+// Every answer is stored under "<prefix>.<index>" (write.submitted for the essay). This table says
+// which section and skill a prefix belongs to, how it is scored, and where its items sit in the
+// lesson; everything that walks answers (scoring, history, mistakes, statistics) derives from it.
 
-export const SKILLS = {
-  reading: ['read'], listening: ['listen', 'dict'], grammar: ['grammar', 'review'], speaking: ['shadow'], writing: ['trans', 'write'],
+export const ITEMS = {
+  read: { section: 'read', skill: 'reading', zh: '閱讀', scoring: 'question', of: (L) => L.reading.questions },
+  listen: { section: 'listen', skill: 'listening', zh: '聽力', scoring: 'question', of: (L) => L.listening.questions },
+  dict: { section: 'listen', skill: 'listening', zh: '聽寫', scoring: 'spoken', of: (L) => L.listening.dictation },
+  grammar: { section: 'grammar', skill: 'grammar', zh: '文法', scoring: 'question', of: (L) => L.grammar.exercises },
+  review: { section: 'grammar', skill: 'grammar', zh: '文法複習', scoring: 'question', of: (L) => L.grammar.review?.exercises },
+  shadow: { section: 'speak', skill: 'speaking', zh: '跟讀', scoring: 'spoken', of: (L) => L.speaking.shadowing },
+  prompt: { section: 'speak', skill: null, zh: '口說回答', scoring: 'prompt', of: (L) => L.speaking.prompts },
+  trans: { section: 'write', skill: 'writing', zh: '翻譯', scoring: 'translation', of: (L) => L.translation },
+  write: { section: 'write', skill: 'writing', zh: '寫作', scoring: 'essay', of: () => [1] },
+  'ch.read': { section: 'challenge', skill: null, zh: '挑戰閱讀', scoring: 'question', of: (L) => L.challenge?.reading.questions },
+  'ch.listen': { section: 'challenge', skill: null, zh: '挑戰聽力', scoring: 'question', of: (L) => L.challenge?.listening.questions },
+  'ch.dict': { section: 'challenge', skill: null, zh: '挑戰聽寫', scoring: 'spoken', of: (L) => L.challenge?.listening.dictation },
 };
+
+// {skill: [prefixes]}, derived from ITEMS (reading [read], listening [listen, dict], ...).
+export const SKILLS = Object.entries(ITEMS).reduce((out, [prefix, item]) => {
+  if (item.skill) (out[item.skill] ||= []).push(prefix);
+  return out;
+}, {});
 export const SKILL_ZH = { reading: '閱讀', listening: '聽力', grammar: '文法', speaking: '口說', writing: '寫作' };
 
-export function skillOf(key) {
-  const prefix = String(key).split('.')[0];
-  return Object.keys(SKILLS).find((s) => SKILLS[s].includes(prefix)) || null;
+// {section: [prefixes]} for the lesson sections, and the challenge's prefixes.
+export const SECTION_ITEMS = Object.entries(ITEMS).reduce((out, [prefix, item]) => {
+  if (item.section !== 'challenge') (out[item.section] ||= []).push(prefix);
+  return out;
+}, {});
+export const CHALLENGE_ITEMS = Object.keys(ITEMS).filter((p) => ITEMS[p].section === 'challenge');
+
+// The lesson sections in the order the app lists them, and the free-practice modes (same values
+// in english_daily/lessons.py SECTION_IDS and PRACTICE_MODES, which the advisor's actions use).
+export const SECTION_IDS = ['vocab', 'read', 'grammar', 'listen', 'speak', 'write'];
+export const PRACTICE_MODE_IDS = ['dict', 'shadow', 'vocab', 'grammar', 'order', 'trans'];
+export const REAL_TIME_MS = 1e12; // timestamps below this are placeholders from before timestamps existed
+
+// The key a word is stored under (cards, saved words).
+export const wkey = (word) => word.trim().toLowerCase();
+
+// The example sentence with the word blanked out.
+export function clozeOf(v) {
+  const hit = findPhrases(v.example, [v.word])[0];
+  return hit ? `${v.example.slice(0, hit.start)}_____${v.example.slice(hit.end)}` : v.example;
+}
+
+// "ch.read.0" -> "ch.read", "write.submitted" -> "write": everything before the last dot.
+export function prefixOf(key) {
+  const s = String(key);
+  const i = s.lastIndexOf('.');
+  return i < 0 ? s : s.slice(0, i);
+}
+export const skillOf = (key) => ITEMS[prefixOf(key)]?.skill || null;
+
+// The lesson item an answer key points at (a question, a sentence, a translation...).
+export function itemOf(lesson, key) {
+  const prefix = prefixOf(key);
+  const index = String(key).slice(prefix.length + 1);
+  if (prefix === 'write') return index === 'submitted' ? lesson.writing : undefined;
+  return /^\d+$/.test(index) ? ITEMS[prefix]?.of(lesson)?.[Number(index)] : undefined;
+}
+
+// Scores for answers that have none yet: {key: score}. Questions are right or wrong, spoken and
+// typed sentences are aligned with the original, translations with the reference (and its
+// alternatives), the essay by its automatic checks. Every device computes the same values.
+export function scoreAnswers(lesson, answers, results = {}) {
+  const out = {};
+  for (const [key, entry] of Object.entries(answers || {})) {
+    if (results[key]) continue;
+    const a = entry?.v;
+    const item = itemOf(lesson, key);
+    if (a == null || item === undefined) continue;
+    const scoring = ITEMS[prefixOf(key)]?.scoring;
+    let score;
+    if (scoring === 'question') score = (item.type === 'fill' ? checkFill(item, a) : a === item.answer) ? 1 : 0;
+    else if (scoring === 'spoken') { if (typeof a === 'string' && a && a !== 'quiet') score = alignWords(item, a).score; }
+    else if (scoring === 'translation') { if (typeof a === 'string' && a) score = translationScore(item, a); }
+    else if (scoring === 'essay' && a) {
+      const draft = answers['write.draft']?.v;
+      if (typeof draft === 'string') { const checks = writingChecks(item, draft); score = checks.filter((c) => c.ok).length / checks.length; }
+    }
+    if (typeof score === 'number' && Number.isFinite(score)) out[key] = score;
+  }
+  return out;
+}
+
+// The answer keys a lesson-index entry has for the given prefixes ({items: {prefix: count}}).
+export function itemKeys(entry, prefixes) {
+  return prefixes.flatMap((p) => {
+    const n = entry.items?.[p] || 0;
+    return p === 'write' ? (n ? ['write.submitted'] : []) : Array.from({ length: n }, (_, i) => `${p}.${i}`);
+  });
+}
+
+// {total, missing} answerable items for some prefixes of a lesson; `isAnswered(key)` says which are done.
+export function itemStatus(entry, prefixes, isAnswered) {
+  const keys = itemKeys(entry, prefixes);
+  return { total: keys.length, missing: keys.filter((k) => !isAnswered(k)).length };
+}
+
+// --- Skill statistics (same thresholds as english_daily/progress.py) -------------------------
+
+export const MIN_SKILL_ATTEMPTS = 4; // answers in a skill before it can count as the weakest
+export const WEAK_SKILL = 0.8; // accuracy below this makes a skill "weak"
+export const TREND_LESSONS = 3; // the recent lessons a trend compares with the earlier ones
+
+// The weakest skill (below WEAK_SKILL with enough attempts), or null.
+export function weakestSkill(stats, { minAttempts = MIN_SKILL_ATTEMPTS, weakBelow = WEAK_SKILL } = {}) {
+  const weak = Object.entries(stats).filter(([, v]) => v.n >= minAttempts && v.acc < weakBelow).sort((a, b) => a[1].acc - b[1].acc)[0];
+  return weak ? { skill: weak[0], acc: weak[1].acc } : null;
 }
 
 // Mean score and attempt count per skill over the most recent `window` lessons with answers.
@@ -351,7 +468,7 @@ export function skillStats(results, window = 7) {
   return { lessons: dates.length, stats };
 }
 
-// --- Dashboard (same rules as scripts/advisor.py) ---------------------------------------------
+// --- Dashboard (same rules as english_daily/advisor.py) ---------------------------------------------
 
 export const SESSION_GAP_MS = 5 * 60 * 1000;
 export const MASTERED_INTERVAL = 21;
@@ -360,7 +477,7 @@ export const DAYPARTS = [['清晨', 0, 6], ['早上', 6, 11], ['中午', 11, 14]
 // Every real answer, section and word-review time (ms) in a progress document.
 export function eventTimes(doc) {
   const out = new Set();
-  const real = (t) => typeof t === 'number' && t > 1e12;
+  const real = (t) => typeof t === 'number' && t > REAL_TIME_MS;
   for (const days of [doc?.answers, doc?.results]) {
     for (const items of Object.values(days || {})) for (const v of Object.values(items || {})) if (real(v?.t)) out.add(v.t);
   }
@@ -435,14 +552,31 @@ export function dayparts(doc) {
   return DAYPARTS.map(([name]) => [name, counts[name]]);
 }
 
-// Word cards by state: often forgotten (a lapse or a lowered ease), well known, still learning.
-export function vocabStatus(srs, weakEase = 2.4) {
+export const WEAK_EASE = 2.4; // below the starting ease of 2.5: graded "hard" or "again" at least once
+
+// A card the learner keeps forgetting: a lapse, or an ease lowered below WEAK_EASE.
+export const isWeakCard = (card, weakEase = WEAK_EASE) => Boolean(card) && typeof card === 'object'
+  && ((card.lapses || 0) > 0 || (card.ease ?? 2.5) < weakEase);
+
+// Word cards by state: often forgotten, well known, still learning.
+export function vocabStatus(srs, weakEase = WEAK_EASE) {
   const out = { mastered: 0, learning: 0, weak: 0 };
   for (const c of Object.values(srs || {})) {
     if (!c || typeof c !== 'object') continue;
-    if ((c.lapses || 0) > 0 || (c.ease ?? 2.5) < weakEase) out.weak += 1;
+    if (isWeakCard(c, weakEase)) out.weak += 1;
     else if ((c.interval || 0) >= MASTERED_INTERVAL) out.mastered += 1;
     else out.learning += 1;
   }
   return out;
+}
+
+// --- Review queue ------------------------------------------------------------------------------
+
+// Words due today (earliest due first), then new words up to `room` (the daily limit minus the
+// words already introduced today); words from the current lesson are introduced by its own section.
+export function reviewQueue(deck, srs, { today, currentDate, room, wordKey = wkey }) {
+  const card = (v) => srs[wordKey(v.word)];
+  const due = deck.filter((v) => isDue(card(v), today)).sort((a, b) => card(a).due.localeCompare(card(b).due));
+  const fresh = deck.filter((v) => !card(v) && v.date < currentDate).slice(0, Math.max(0, room));
+  return [...due.map((v) => ({ v, isNew: false })), ...fresh.map((v) => ({ v, isNew: true }))];
 }
