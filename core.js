@@ -208,7 +208,8 @@ export function gradingPrompt({ level, task, mustUse, text }) {
 // --- Progress state, migration and cross-device merge ---------------------------------------
 
 // Fields that sync between devices. Settings and the sync token stay on each device.
-export const SYNCED = ['done', 'answers', 'results', 'srs', 'mistakes', 'pending', 'activity', 'reviewLog', 'practice', 'profile', 'words'];
+export const SYNCED = ['done', 'answers', 'results', 'srs', 'mistakes', 'pending', 'activity', 'reviewLog', 'practice', 'profile', 'words', 'notes'];
+export const PROFILE_NOTE_ID = 'profile-note'; // the note migrated from the old single profile.note field
 export const STATE_VERSION = 2;
 
 const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -234,6 +235,15 @@ export function migrateState(raw) {
   }
   delete s.pendingSpeak;
   for (const [word, card] of Object.entries(s.srs)) if (isObj(card) && !('t' in card)) s.srs[word] = { ...card, t: 0 };
+  // The free-text "tell the teacher" field became the notes board: move it once, under a fixed id
+  // so two devices migrating separately still merge into one note.
+  if (isObj(s.profile) && 'note' in s.profile) {
+    const { note, ...rest } = s.profile;
+    if (typeof note === 'string' && note.trim() && !s.notes[PROFILE_NOTE_ID]) {
+      s.notes[PROFILE_NOTE_ID] = { id: PROFILE_NOTE_ID, t: rest.t || 0, text: note.trim() };
+    }
+    s.profile = rest;
+  }
   s.v = STATE_VERSION;
   return s;
 }
@@ -272,7 +282,33 @@ export function mergeDocs(a, b) {
     practice: mergeNested(a.practice, b.practice, (x, y) => (y[1] > x[1] ? y : x)),
     profile: newer(a.profile || {}, b.profile || {}),
     words: mergeMap(a.words, b.words, newer),
+    notes: mergeMap(a.notes, b.notes, newer),
   };
+}
+
+// --- Notes to the teacher ---------------------------------------------------------------------
+// notes: {id: {id, t, text, skill?, closed?}}; a note is never deleted, "closed" keeps it as a
+// tombstone. Lessons answer notes through their `replies` ([{to: id, zh}]), carried by the index.
+
+// Replies the lessons gave to one note, oldest first: [{date, zh}].
+export function noteReplies(note, index) {
+  return (index || [])
+    .flatMap((x) => (x.replies || []).filter((r) => r.to === note.id).map((r) => ({ date: x.date, zh: r.zh })))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Open and closed notes (newest first) with their replies, plus the counts the home card shows.
+// `seenDate` is the newest reply date the learner has already opened the board for.
+export function notesSummary(notes, index, seenDate = '') {
+  const all = Object.values(notes || {})
+    .filter((n) => isObj(n) && typeof n.text === 'string' && n.text.trim())
+    .map((n) => ({ ...n, replies: noteReplies(n, index) }));
+  const open = all.filter((n) => !n.closed).sort((a, b) => (b.t || 0) - (a.t || 0));
+  const closed = all.filter((n) => n.closed).sort((a, b) => b.closed - a.closed);
+  const replied = open.filter((n) => n.replies.length);
+  const unseen = replied.filter((n) => n.replies[n.replies.length - 1].date > seenDate).length;
+  const latestReply = all.reduce((m, n) => n.replies.reduce((mm, r) => (r.date > mm ? r.date : mm), m), '');
+  return { open, closed, replied: replied.length, unseen, latestReply };
 }
 
 // JSON with sorted keys, so two documents with the same content compare equal.

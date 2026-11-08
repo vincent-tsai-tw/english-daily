@@ -3,9 +3,9 @@
 // data/u/<slug>/. Progress lives in localStorage (one key per learner) and, once connected, syncs
 // to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 
-import * as core from './core.js?v=deae3bd00e';
-import * as speech from './speech.js?v=deae3bd00e';
-import * as sync from './sync.js?v=deae3bd00e';
+import * as core from './core.js?v=ffb1e7dae2';
+import * as speech from './speech.js?v=ffb1e7dae2';
+import * as sync from './sync.js?v=ffb1e7dae2';
 
 const ME_KEY = 'english-daily:me';
 const SYNC_DELAY_MS = 4000;
@@ -1252,6 +1252,7 @@ async function homePage(date) {
       : h('p', { class: 'done-note' }, icon('check'), '這一課全部完成了！'),
     !S.profile?.t ? h('a', { class: 'card notice', href: '#/goals' },
       h('strong', {}, '告訴老師你的目標和興趣'), h('span', { class: 'muted' }, '花 30 秒選一選，之後的課會更貼近你想用英文的地方。')) : null,
+    notesCard(),
     pending.length ? h('a', { class: 'card notice', href: `#/l/${pending[0].split('|')[0]}/speak` },
       h('strong', {}, `口說待補 ${pending.length} 題`), h('span', { class: 'muted' }, '在外面時先默念或打字的題目，回家花幾分鐘用說的補完。')) : null,
     suggested ? h('div', { class: 'card coach' }, h('p', { class: 'coach-head' }, `單字之後先做：${suggested.section.zh}`),
@@ -1961,6 +1962,7 @@ async function dashboardPage(slug) {
     !p.self && !p.doc ? h('div', { class: 'card notice' }, h('strong', {}, `這台裝置看不到 ${p.name} 的作答紀錄`),
       h('span', { class: 'muted' }, '開啟跨裝置同步（貼上同一個 token）後，就能在這裡看到對方的進度。')) : null,
     advisorCard(p, p.advisor || {}),
+    p.self ? notesCard() : null,
     h('div', { class: 'stats' }, stat(`${core.streakOf(days, today())}`, '連續天數'), stat(`${days.length}`, '練習天數'),
       stat(`${completed}`, '完成的課'), stat(`${answered}`, '答題數')),
     dashSection('學習日曆', '最近 8 週，顏色越深練得越久。', calendarHeatmap(activity)),
@@ -2147,11 +2149,10 @@ function goalsPage() {
   const paintTime = () => timeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.m) === minutes));
   for (const m of MINUTES) timeSeg.append(h('button', { type: 'button', 'data-m': m, onclick: () => { minutes = m; paintTime(); } }, `${m} 分`));
   paintTime();
-  const note = h('textarea', { class: 'field', rows: 3, placeholder: '例如：想練開會時打斷別人的說法、下個月要去日本旅遊、聽力最弱…' }, p.note || '');
   const saveBtn = h('button', {
     class: 'btn primary wide', type: 'button',
     onclick: () => {
-      S.profile = { goals: [...chosen.goals], interests: [...chosen.interests], minutes, note: note.value.trim(), t: now() };
+      S.profile = { goals: [...chosen.goals], interests: [...chosen.interests], minutes, t: now() };
       touch();
       save();
       toast('已儲存。明天早上的課會照你的目標和興趣出題。');
@@ -2165,8 +2166,94 @@ function goalsPage() {
     h('h2', { class: 'section-title' }, '學習目標'), chips('goals', GOALS),
     h('h2', { class: 'section-title' }, '興趣'), chips('interests', INTERESTS),
     h('h2', { class: 'section-title' }, '每天大約有多少時間？'), timeSeg,
-    h('h2', { class: 'section-title' }, '還想告訴老師什麼？'), note,
+    h('h2', { class: 'section-title' }, '還想告訴老師什麼？'),
+    h('a', { class: 'card notice', href: '#/notes' }, h('strong', {}, '到「給老師的留言」寫 ›'),
+      h('span', { class: 'muted' }, '哪裡覺得不夠好、想多練什麼情境，寫在那裡，隔天的課會回應你。')),
     h('div', { class: 'finish' }, saveBtn));
+}
+
+// --- Notes to the teacher -------------------------------------------------------------------
+
+const NOTE_SKILLS = ['單字', '閱讀', '文法', '聽力', '口說', '寫作', '其他'];
+const notesSeenKey = () => `english-daily:notes-seen:${ME.slug}`; // newest reply date already seen (this device)
+const notesSeen = () => { try { return localStorage.getItem(notesSeenKey()) || ''; } catch { return ''; } };
+const notesOverview = () => core.notesSummary(S.notes, INDEX, notesSeen());
+
+function addNote(text, skill) {
+  const id = `${now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  S.notes[id] = { id, t: now(), text, ...(skill ? { skill } : {}) };
+  touch();
+  save();
+}
+
+function setNoteClosed(id, closed) {
+  const n = S.notes[id];
+  if (!n) return;
+  const { closed: _was, ...rest } = n;
+  S.notes[id] = closed ? { ...rest, t: now(), closed: now() } : { ...rest, t: now() };
+  save();
+}
+
+// The home and dashboard card: unread replies first, else how many notes are waiting.
+function notesCard() {
+  const o = notesOverview();
+  if (o.unseen) {
+    return h('a', { class: 'card notice', href: '#/notes' }, h('strong', {}, `老師回應了你的留言（${o.unseen}）`),
+      h('span', { class: 'muted' }, '看看今天的課怎麼回應你想加強的地方。'));
+  }
+  return h('a', { class: 'card notice', href: '#/notes' },
+    h('strong', {}, o.open.length ? `給老師的留言：${o.open.length} 則${o.replied ? `，已回應 ${o.replied} 則` : ''}` : '想請老師加強什麼？留言給老師'),
+    h('span', { class: 'muted' }, '寫下你覺得不夠好的地方，明天的課會回應你。'));
+}
+
+function noteCard(n, closed) {
+  const toggle = h('button', {
+    class: 'btn subtle', type: 'button',
+    onclick: () => { setNoteClosed(n.id, !closed); toast(closed ? '已重新打開，老師會再看到。' : '已收起。'); route(); },
+  }, closed ? '重新打開' : '學會了，收起');
+  return h('div', { class: `card note${closed ? ' closed' : ''}` },
+    h('p', { class: 'note-meta' }, formatDate(core.localDate(new Date(n.t || 0))), n.skill ? h('span', { class: 'chip' }, n.skill) : null),
+    h('p', { class: 'note-text' }, n.text),
+    n.replies.length
+      ? n.replies.map((r) => h('div', { class: 'note-reply' },
+        h('strong', {}, `老師在 ${shortDate(r.date)} 的課回應了`), h('p', {}, r.zh), h('a', { href: `#/l/${r.date}` }, '看那天的課 ›')))
+      : (closed ? null : h('p', { class: 'muted' }, '老師還沒看到，明天早上的課會回應。')),
+    h('div', { class: 'row' }, toggle));
+}
+
+function notesPage() {
+  const o = notesOverview();
+  try { if (o.latestReply) localStorage.setItem(notesSeenKey(), o.latestReply); } catch { /* storage blocked */ }
+  let skill = '';
+  const text = h('textarea', { class: 'field', rows: 4, placeholder: '例如：完成式還是會搞錯、想練電話會議的開場、聽快一點的對話會跟不上…' });
+  const chips = h('div', { class: 'chips pick' }, NOTE_SKILLS.map((s) => h('button', {
+    type: 'button', class: 'chip', 'aria-pressed': 'false',
+    onclick: () => {
+      skill = skill === s ? '' : s;
+      chips.querySelectorAll('.chip').forEach((b) => { const on = b.textContent === skill; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    },
+  }, s)));
+  const send = h('button', {
+    class: 'btn primary wide', type: 'button',
+    onclick: () => {
+      const v = text.value.trim();
+      if (!v) { toast('先寫一點想加強的地方。'); text.focus(); return; }
+      addNote(v, skill);
+      toast('已送出。明天的課會回應你。');
+      route();
+    },
+  }, '送出給老師');
+  return h('div', { class: 'page' },
+    h('p', { class: 'eyebrow' }, '給老師的留言・Notes'),
+    h('h1', { class: 'headline' }, '哪裡想加強？告訴老師'),
+    h('p', { class: 'lede' }, '寫下你覺得不夠好、想多練的地方。明天的課會回應你，學習顧問也會參考。'),
+    text,
+    h('p', { class: 'muted' }, '類別（選填）'), chips,
+    send,
+    o.open.length ? h('h2', { class: 'section-title' }, `留言（${o.open.length}）`) : null,
+    o.open.map((n) => noteCard(n, false)),
+    o.closed.length ? h('details', { class: 'adv-more' }, h('summary', {}, `已收起的留言（${o.closed.length}）`),
+      o.closed.map((n) => noteCard(n, true))) : null);
 }
 
 function profileGroup() {
@@ -2314,6 +2401,7 @@ async function route() {
     else if (parts[0] === 'history' || parts[0] === 'archive') { tab = 'history'; page = historyPage(); }
     else if (parts[0] === 'settings') { tab = 'settings'; page = settingsPage(); }
     else if (parts[0] === 'goals') { tab = 'settings'; page = goalsPage(); }
+    else if (parts[0] === 'notes') page = notesPage();
     else throw new Error('找不到這個頁面');
     if (parts[0] === 'l' && parts[1] !== currentLessonDate()) tab = 'history';
     put(view, page);
