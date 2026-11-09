@@ -2,12 +2,12 @@
 // skill trends, level history, grammar mastery, vocabulary, essays and habits. Charts follow the
 // dataviz rules: one hue per job, no colour alone, text in text colours.
 
-import * as core from '../core.js?v=4fbc7a9ae0';
-import { store, library } from '../state.js?v=4fbc7a9ae0';
-import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=4fbc7a9ae0';
-import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=4fbc7a9ae0';
-import { SECTIONS } from '../sections.js?v=4fbc7a9ae0';
-import { notesCard } from '../widgets/notes.js?v=4fbc7a9ae0';
+import * as core from '../core.js?v=d4943bd8ca';
+import { store, library } from '../state.js?v=d4943bd8ca';
+import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=d4943bd8ca';
+import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=d4943bd8ca';
+import { SECTIONS } from '../sections.js?v=d4943bd8ca';
+import { notesCard } from '../widgets/notes.js?v=d4943bd8ca';
 
 // Where an advisor method's `action` opens in the app.
 function actionHref(action) {
@@ -223,7 +223,7 @@ export async function dashboardPage(slug) {
     h('div', { class: 'stats' }, stat(`${core.streakOf(days, today())}`, '連續天數'), stat(`${days.length}`, '練習天數'),
       stat(`${completed}`, '完成的課'), stat(`${answered}`, '答題數')),
     dashSection('學習日曆', '最近 8 週，顏色越深練得越久。', calendarHeatmap(activity)),
-    dashSection('五項能力', '每一課的正確率；數字是最近 3 課的平均，有 5 課以上時箭頭和更早的課比。點一列看每課的分數。', skillTrends(results)),
+    dashSection('各項能力', '每一課的正確率；數字是最近 3 課的平均，有 5 課以上時箭頭和更早的課比。點一列看每課的分數。', skillTrends(results)),
     dashSection('等級歷程', null, levelJourney(p.index)),
     dashSection('文法掌握', '每個學過的文法點（含複習題）的正確率。', grammarBars(core.grammarMastery(results, p.index))),
     dashSection('單字', null, vocabBlock(doc, p.deck)),

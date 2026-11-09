@@ -1,14 +1,14 @@
 // Spaced word review (recognise or spell) and the panel that redoes wrong answers.
 
-import * as core from '../core.js?v=4fbc7a9ae0';
-import { store, library } from '../state.js?v=4fbc7a9ae0';
-import { today } from '../store.js?v=4fbc7a9ae0';
-import { h, put, icon, formatDate, toast } from '../dom.js?v=4fbc7a9ae0';
-import { rerender } from '../nav.js?v=4fbc7a9ae0';
-import { sayBtn } from '../widgets/audio.js?v=4fbc7a9ae0';
-import { textField } from '../widgets/blocks.js?v=4fbc7a9ae0';
-import { exercise } from '../widgets/questions.js?v=4fbc7a9ae0';
-import { updateBadge } from './shell.js?v=4fbc7a9ae0';
+import * as core from '../core.js?v=d4943bd8ca';
+import { store, library } from '../state.js?v=d4943bd8ca';
+import { today } from '../store.js?v=d4943bd8ca';
+import { h, put, icon, formatDate, toast } from '../dom.js?v=d4943bd8ca';
+import { rerender } from '../nav.js?v=d4943bd8ca';
+import { sayBtn } from '../widgets/audio.js?v=d4943bd8ca';
+import { textField } from '../widgets/blocks.js?v=d4943bd8ca';
+import { exercise } from '../widgets/questions.js?v=d4943bd8ca';
+import { updateBadge } from './shell.js?v=d4943bd8ca';
 
 export function reviewPage() {
   const t = today();
@@ -107,7 +107,7 @@ const pickMistake = (L, m) => core.itemOf(L, `${m.kind}.${m.i}`);
 
 function mistakesPanel() {
   const list = store.activeMistakes();
-  if (!list.length) return h('p', { class: 'muted' }, '目前沒有錯題。閱讀、文法、聽力答錯的題目會出現在這裡。');
+  if (!list.length) return h('p', { class: 'muted' }, '目前沒有錯題。單字小測驗、閱讀、文法、聽力答錯的題目會出現在這裡。');
   const box = h('div');
   const btn = h('button', {
     class: 'btn', type: 'button',

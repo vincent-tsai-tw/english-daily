@@ -1,9 +1,9 @@
 // The six sections of a lesson and the order the learner should do them in: vocabulary first,
 // then the weakest skill, then the rest (core.sectionOrder / core.nextSection).
 
-import * as core from './core.js?v=4fbc7a9ae0';
-import { store, library } from './state.js?v=4fbc7a9ae0';
-import { pct } from './dom.js?v=4fbc7a9ae0';
+import * as core from './core.js?v=d4943bd8ca';
+import { store, library } from './state.js?v=d4943bd8ca';
+import { pct } from './dom.js?v=d4943bd8ca';
 
 const SECTION_INFO = {
   vocab: { zh: '單字', en: 'Vocabulary', min: 4, sub: (L) => `${L.vocab.slice(0, 4).map((v) => v.word).join('、')}…` },
@@ -31,7 +31,8 @@ export function suggestedSection(coach, done, results) {
     reason = `最近${core.SKILL_ZH[skill]}的正確率 ${pct(weak.acc)}，先練最弱的最有效。`;
   }
   const section = sectionById(SKILL_SECTION[skill]);
-  return section && !done[section.id] ? { section, reason } : null;
+  if (!section || section.id === SECTION_IDS[0]) return null; // vocabulary is always first anyway
+  return !done[section.id] ? { section, reason } : null;
 }
 
 // Today's suggestion (weakest skill), only for the current lesson.

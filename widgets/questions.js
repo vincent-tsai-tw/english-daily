@@ -1,9 +1,9 @@
 // Multiple-choice and fill-in questions. `answers` is a {get, set} pair: a lesson's questions
 // store into the learner's progress (store.answerStore), practice questions keep a local value.
 
-import * as core from '../core.js?v=4fbc7a9ae0';
-import { store } from '../state.js?v=4fbc7a9ae0';
-import { h, put } from '../dom.js?v=4fbc7a9ae0';
+import * as core from '../core.js?v=d4943bd8ca';
+import { store } from '../state.js?v=d4943bd8ca';
+import { h, put } from '../dom.js?v=d4943bd8ca';
 
 export function mcq(item, answers, onResult) {
   const box = h('div', { class: 'q' });
@@ -57,8 +57,11 @@ export function fillQ(item, answers, onResult) {
 
 export const exercise = (item, answers, onResult) => (item.type === 'fill' ? fillQ : mcq)(item, answers, onResult);
 
-// A lesson's questions under one answer-key prefix; wrong answers go to the mistake list.
-export function questionList(L, kind, items) {
+// A lesson's questions under one answer-key prefix; wrong answers go to the mistake list. An item
+// with `hint_zh` (the vocabulary quiz) shows it above the question; `onResult(ok, i)` is told
+// about every answer.
+export function questionList(L, kind, items, onResult) {
   return h('ol', { class: 'questions' }, items.map((item, i) => h('li', { 'data-ans': `${L.date}|${kind}.${i}` },
-    exercise(item, store.answerStore(L.date, `${kind}.${i}`), (ok) => store.recordMistake({ date: L.date, kind, i }, ok)))));
+    item.hint_zh ? h('p', { class: 'q-hint' }, `提示：${item.hint_zh}`) : null,
+    exercise(item, store.answerStore(L.date, `${kind}.${i}`), (ok) => { store.recordMistake({ date: L.date, kind, i }, ok); onResult?.(ok, i); }))));
 }

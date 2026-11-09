@@ -3,7 +3,7 @@
 // the few named operations the pages use. Cross-device merging is in sync.js; the document's
 // shape and merge rules are in core.js.
 
-import * as core from './core.js?v=4fbc7a9ae0';
+import * as core from './core.js?v=d4943bd8ca';
 
 const ME_KEY = 'english-daily:me';
 const LEGACY_KEY = 'english-daily:v1'; // progress from before profiles: it belonged to the first learner
@@ -118,6 +118,9 @@ export class Store {
     const v = this.ans(date, key);
     return v != null && v !== '';
   }
+
+  // The recorded score (0..1) of an answer, or undefined when it has none.
+  score(date, key) { return this.state.results[date]?.[key]?.s; }
 
   // Store an answer; `score` (0..1) also records a result that progress analysis uses.
   setAns(date, key, value, score) {

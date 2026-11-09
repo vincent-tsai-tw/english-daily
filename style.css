@@ -235,6 +235,8 @@ p { margin: 0; }
 .questions > li::marker { color: var(--text-3); font-weight: 600; }
 .q > * + * { margin-top: 10px; }
 .q-text { font-weight: 500; }
+.q-hint { color: var(--text-2); font-size: 15px; margin-bottom: 6px; }
+.quiz-score { margin-top: 14px; }
 .options { display: grid; gap: 8px; }
 .opt {
   text-align: left; border: 1px solid var(--sep); background: var(--raised); border-radius: 12px; padding: 12px 14px;

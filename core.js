@@ -340,6 +340,7 @@ export const sameDoc = (a, b) => stableStringify(a) === stableStringify(b);
 // lesson; everything that walks answers (scoring, history, mistakes, statistics) derives from it.
 
 export const ITEMS = {
+  vocab: { section: 'vocab', skill: 'vocabulary', zh: '單字小測驗', scoring: 'question', of: (L) => vocabQuiz(L) },
   read: { section: 'read', skill: 'reading', zh: '閱讀', scoring: 'question', of: (L) => L.reading.questions },
   listen: { section: 'listen', skill: 'listening', zh: '聽力', scoring: 'question', of: (L) => L.listening.questions },
   dict: { section: 'listen', skill: 'listening', zh: '聽寫', scoring: 'spoken', of: (L) => L.listening.dictation },
@@ -359,7 +360,7 @@ export const SKILLS = Object.entries(ITEMS).reduce((out, [prefix, item]) => {
   if (item.skill) (out[item.skill] ||= []).push(prefix);
   return out;
 }, {});
-export const SKILL_ZH = { reading: '閱讀', listening: '聽力', grammar: '文法', speaking: '口說', writing: '寫作' };
+export const SKILL_ZH = { vocabulary: '單字', reading: '閱讀', listening: '聽力', grammar: '文法', speaking: '口說', writing: '寫作' };
 
 // {section: [prefixes]} for the lesson sections, and the challenge's prefixes.
 export const SECTION_ITEMS = Object.entries(ITEMS).reduce((out, [prefix, item]) => {
@@ -381,6 +382,45 @@ export const wkey = (word) => word.trim().toLowerCase();
 export function clozeOf(v) {
   const hit = findPhrases(v.example, [v.word])[0];
   return hit ? `${v.example.slice(0, hit.start)}_____${v.example.slice(hit.end)}` : v.example;
+}
+
+// The quiz the vocabulary section gives on a lesson's eight words: one question per word, in word
+// order, cycling through three forms so that recognising the meaning, picking the word for a
+// definition and spelling the word into its own example are all practised. Wrong options are the
+// other words of the same lesson. Everything is derived from the lesson with no randomness, so
+// every device and english_daily/lessons.py vocab_quiz build the very same questions (answer keys
+// "vocab.<i>" point at word i).
+export const QUIZ_FORMS = ['meaning', 'cloze', 'word'];
+const QUIZ_OPTIONS = 4;
+
+export function vocabQuiz(L) {
+  const vocab = L.vocab || [];
+  return vocab.map((v, i) => {
+    const form = QUIZ_FORMS[i % QUIZ_FORMS.length];
+    if (form === 'cloze') {
+      const hit = findPhrases(v.example, [v.word])[0];
+      const used = hit ? v.example.slice(hit.start, hit.end) : '';
+      return {
+        form, type: 'fill',
+        q: hit ? `${v.example.slice(0, hit.start)}___${v.example.slice(hit.end)}` : `___（${v.definition}）`,
+        answer: v.word, accept: used && used.toLowerCase() !== v.word.toLowerCase() ? [used] : [],
+        hint_zh: `${v.zh}（${v.pos}）`, explain_zh: `${v.zh}：${v.definition}`,
+      };
+    }
+    const field = form === 'meaning' ? 'zh' : 'word';
+    const correct = v[field];
+    const others = [];
+    for (let k = 1; k < vocab.length && others.length < QUIZ_OPTIONS - 1; k++) {
+      const candidate = vocab[(i + k) % vocab.length][field];
+      if (candidate !== correct && !others.includes(candidate)) others.push(candidate);
+    }
+    const answer = (i + 2) % (others.length + 1);
+    const options = [...others.slice(0, answer), correct, ...others.slice(answer)];
+    return {
+      form, type: 'mcq', q: form === 'meaning' ? `「${v.word}」是什麼意思？` : `哪個字的意思是「${v.definition}」？`,
+      options, answer, explain_zh: `${v.word}：${v.zh}。${v.example}`,
+    };
+  });
 }
 
 // "ch.read.0" -> "ch.read", "write.submitted" -> "write": everything before the last dot.

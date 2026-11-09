@@ -1,16 +1,16 @@
 // The six sections of a lesson, the section page that walks through them, and the challenge page.
 
-import * as core from '../core.js?v=4fbc7a9ae0';
-import * as speech from '../speech.js?v=4fbc7a9ae0';
-import { store, library } from '../state.js?v=4fbc7a9ae0';
-import { today } from '../store.js?v=4fbc7a9ae0';
-import { h, put, icon, toast, formatDate, copyText, pct, levelTag } from '../dom.js?v=4fbc7a9ae0';
-import { SECTIONS, nextSectionOf } from '../sections.js?v=4fbc7a9ae0';
-import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=4fbc7a9ae0';
-import { diffView, scoreLine, vocabItems, readingBlock, listeningBlock } from '../widgets/blocks.js?v=4fbc7a9ae0';
-import { questionList } from '../widgets/questions.js?v=4fbc7a9ae0';
-import { grammarGuide, exampleLine } from '../widgets/grammar.js?v=4fbc7a9ae0';
-import { setQuiet } from './shell.js?v=4fbc7a9ae0';
+import * as core from '../core.js?v=d4943bd8ca';
+import * as speech from '../speech.js?v=d4943bd8ca';
+import { store, library } from '../state.js?v=d4943bd8ca';
+import { today } from '../store.js?v=d4943bd8ca';
+import { h, put, icon, toast, formatDate, copyText, pct, levelTag } from '../dom.js?v=d4943bd8ca';
+import { SECTIONS, nextSectionOf } from '../sections.js?v=d4943bd8ca';
+import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=d4943bd8ca';
+import { diffView, scoreLine, vocabItems, readingBlock, listeningBlock } from '../widgets/blocks.js?v=d4943bd8ca';
+import { questionList } from '../widgets/questions.js?v=d4943bd8ca';
+import { grammarGuide, exampleLine } from '../widgets/grammar.js?v=d4943bd8ca';
+import { setQuiet } from './shell.js?v=d4943bd8ca';
 
 // --- Vocabulary, reading, grammar, listening ---------------------------------------------------
 
@@ -32,9 +32,30 @@ function vocabSection(L) {
   }, '遮住中文自我測驗');
   return [
     h('h1', { class: 'title' }, `今天的 ${L.vocab.length} 個單字`),
-    h('p', { class: 'lede' }, '先聽發音、讀例句。完成這一節後，這些單字會進入間隔複習。'),
+    h('p', { class: 'lede' }, '先聽發音、讀例句，再做下面的小測驗。完成這一節後，這些單字會進入間隔複習。'),
     h('div', { class: 'toolbar' }, toggle),
     list,
+    vocabQuizBlock(L),
+  ];
+}
+
+// Eight questions on the words just studied (core.vocabQuiz), answered like any lesson question:
+// scores count towards the 單字 skill and wrong answers go to the mistake list.
+function vocabQuizBlock(L) {
+  const quiz = core.vocabQuiz(L);
+  const score = h('p', { class: 'muted quiz-score' });
+  const paint = () => {
+    const keys = quiz.map((_, i) => `vocab.${i}`);
+    const done = keys.filter((k) => store.answered(L.date, k)).length;
+    const right = keys.filter((k) => store.score(L.date, k) === 1).length;
+    score.textContent = !done ? '' : done < quiz.length ? `已答 ${done} / ${quiz.length} 題，答對 ${right} 題。` : `${quiz.length} 題答對 ${right} 題。${right === quiz.length ? '全對！' : '答錯的字會進錯題重練。'}`;
+  };
+  paint();
+  return [
+    h('h2', { class: 'section-title' }, '單字小測驗'),
+    h('p', { class: 'hint' }, '看完單字卡就測一次：選意思、照解釋選字、把字填回例句。答錯沒關係，馬上回去看那張卡。'),
+    questionList(L, 'vocab', quiz, paint),
+    score,
   ];
 }
 
