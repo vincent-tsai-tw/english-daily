@@ -3,8 +3,8 @@
 // push the result. The same pass picks up the teacher's essay feedback and the advisor's reports,
 // which only the Mac writes. gist.js is the GitHub API client; the token stays on each device.
 
-import * as core from './core.js?v=d4943bd8ca';
-import * as gist from './gist.js?v=d4943bd8ca';
+import * as core from './core.js?v=ec537f59b3';
+import * as gist from './gist.js?v=ec537f59b3';
 
 const SYNC_DELAY_MS = 4000;
 export const PULL_EVERY_MS = 60000;

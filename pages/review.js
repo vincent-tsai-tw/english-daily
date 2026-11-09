@@ -1,14 +1,14 @@
 // Spaced word review (recognise or spell) and the panel that redoes wrong answers.
 
-import * as core from '../core.js?v=d4943bd8ca';
-import { store, library } from '../state.js?v=d4943bd8ca';
-import { today } from '../store.js?v=d4943bd8ca';
-import { h, put, icon, formatDate, toast } from '../dom.js?v=d4943bd8ca';
-import { rerender } from '../nav.js?v=d4943bd8ca';
-import { sayBtn } from '../widgets/audio.js?v=d4943bd8ca';
-import { textField } from '../widgets/blocks.js?v=d4943bd8ca';
-import { exercise } from '../widgets/questions.js?v=d4943bd8ca';
-import { updateBadge } from './shell.js?v=d4943bd8ca';
+import * as core from '../core.js?v=ec537f59b3';
+import { store, library } from '../state.js?v=ec537f59b3';
+import { today } from '../store.js?v=ec537f59b3';
+import { h, put, icon, formatDate, toast } from '../dom.js?v=ec537f59b3';
+import { rerender } from '../nav.js?v=ec537f59b3';
+import { sayBtn } from '../widgets/audio.js?v=ec537f59b3';
+import { textField } from '../widgets/blocks.js?v=ec537f59b3';
+import { exercise } from '../widgets/questions.js?v=ec537f59b3';
+import { updateBadge } from './shell.js?v=ec537f59b3';
 
 export function reviewPage() {
   const t = today();

@@ -1,12 +1,12 @@
 // Every lesson day so far, with the questions left unanswered per section and links that jump
 // straight to them.
 
-import * as core from '../core.js?v=d4943bd8ca';
-import { store, library } from '../state.js?v=d4943bd8ca';
-import { today } from '../store.js?v=d4943bd8ca';
-import { h, icon, formatDate } from '../dom.js?v=d4943bd8ca';
-import { rerender } from '../nav.js?v=d4943bd8ca';
-import { SECTIONS } from '../sections.js?v=d4943bd8ca';
+import * as core from '../core.js?v=ec537f59b3';
+import { store, library } from '../state.js?v=ec537f59b3';
+import { today } from '../store.js?v=ec537f59b3';
+import { h, icon, formatDate } from '../dom.js?v=ec537f59b3';
+import { rerender } from '../nav.js?v=ec537f59b3';
+import { SECTIONS } from '../sections.js?v=ec537f59b3';
 
 const { SECTION_ITEMS, CHALLENGE_ITEMS } = core;
 let historyFilter = 'all';
