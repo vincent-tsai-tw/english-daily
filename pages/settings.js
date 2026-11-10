@@ -1,15 +1,15 @@
 // Settings: the current profile, cross-device sync, voice and review options, manual backup;
 // and the learning-goals page.
 
-import * as core from '../core.js?v=ec537f59b3';
-import * as speech from '../speech.js?v=ec537f59b3';
-import * as gist from '../gist.js?v=ec537f59b3';
-import { store, syncer } from '../state.js?v=ec537f59b3';
-import { freshState, withSettings } from '../store.js?v=ec537f59b3';
-import { h, put, icon, toast, formatTime, copyText } from '../dom.js?v=ec537f59b3';
-import { rerender } from '../nav.js?v=ec537f59b3';
-import { ttsOpts } from '../widgets/audio.js?v=ec537f59b3';
-import { setQuiet, updateBadge } from './shell.js?v=ec537f59b3';
+import * as core from '../core.js?v=4aac385308';
+import * as speech from '../speech.js?v=4aac385308';
+import * as gist from '../gist.js?v=4aac385308';
+import { store, syncer } from '../state.js?v=4aac385308';
+import { freshState, withSettings } from '../store.js?v=4aac385308';
+import { h, put, icon, toast, formatTime, copyText } from '../dom.js?v=4aac385308';
+import { rerender } from '../nav.js?v=4aac385308';
+import { ttsOpts } from '../widgets/audio.js?v=4aac385308';
+import { setQuiet, updateBadge } from './shell.js?v=4aac385308';
 
 function syncGroup() {
   const cfg = syncer.config;
