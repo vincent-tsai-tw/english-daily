@@ -1,7 +1,7 @@
 // DOM helpers shared by every page: element builders, small formatters, the toast and the bottom
 // sheet. Nothing here knows about the learner's state.
 
-import * as core from './core.js?v=4aac385308';
+import * as core from './core.js?v=61e1476431';
 
 export const WEEKDAYS = '日一二三四五六';
 

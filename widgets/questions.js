@@ -1,9 +1,9 @@
 // Multiple-choice and fill-in questions. `answers` is a {get, set} pair: a lesson's questions
 // store into the learner's progress (store.answerStore), practice questions keep a local value.
 
-import * as core from '../core.js?v=4aac385308';
-import { store } from '../state.js?v=4aac385308';
-import { h, put } from '../dom.js?v=4aac385308';
+import * as core from '../core.js?v=61e1476431';
+import { store } from '../state.js?v=61e1476431';
+import { h, put } from '../dom.js?v=61e1476431';
 
 export function mcq(item, answers, onResult) {
   const box = h('div', { class: 'q' });

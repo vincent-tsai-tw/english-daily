@@ -2,12 +2,12 @@
 // skill trends, level history, grammar mastery, vocabulary, essays and habits. Charts follow the
 // dataviz rules: one hue per job, no colour alone, text in text colours.
 
-import * as core from '../core.js?v=4aac385308';
-import { store, library } from '../state.js?v=4aac385308';
-import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=4aac385308';
-import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=4aac385308';
-import { SECTIONS } from '../sections.js?v=4aac385308';
-import { notesCard } from '../widgets/notes.js?v=4aac385308';
+import * as core from '../core.js?v=61e1476431';
+import { store, library } from '../state.js?v=61e1476431';
+import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=61e1476431';
+import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=61e1476431';
+import { SECTIONS } from '../sections.js?v=61e1476431';
+import { notesCard } from '../widgets/notes.js?v=61e1476431';
 
 // Where an advisor method's `action` opens in the app.
 function actionHref(action) {
