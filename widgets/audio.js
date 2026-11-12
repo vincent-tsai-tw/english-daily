@@ -1,8 +1,8 @@
 // Buttons that speak, play or listen: pronunciation, read-aloud, speed, and the microphone.
 
-import * as speech from '../speech.js?v=eae654e601';
-import { store } from '../state.js?v=eae654e601';
-import { h, icon, put, toast } from '../dom.js?v=eae654e601';
+import * as speech from '../speech.js?v=f46691462d';
+import { store } from '../state.js?v=f46691462d';
+import { h, icon, put, toast } from '../dom.js?v=f46691462d';
 
 export const SLOW_RATE = 0.7;
 const RATES = [0.8, 1, 1.2];

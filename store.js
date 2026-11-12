@@ -3,7 +3,7 @@
 // the few named operations the pages use. Cross-device merging is in sync.js; the document's
 // shape and merge rules are in core.js.
 
-import * as core from './core.js?v=eae654e601';
+import * as core from './core.js?v=f46691462d';
 
 const ME_KEY = 'english-daily:me';
 const LEGACY_KEY = 'english-daily:v1'; // progress from before profiles: it belonged to the first learner

@@ -2,16 +2,16 @@
 // questions are fixed when it starts and every answer is saved at once, so it can be done in
 // several sittings) and the result with what the teacher does with it.
 
-import * as core from '../core.js?v=eae654e601';
-import { store, library, syncer } from '../state.js?v=eae654e601';
-import { today } from '../store.js?v=eae654e601';
-import { h, put, pct, icon, toast, formatDate, shortDate, stat, showSheet, hideSheet } from '../dom.js?v=eae654e601';
-import { rerender } from '../nav.js?v=eae654e601';
-import { sayBtn } from '../widgets/audio.js?v=eae654e601';
-import { dictationCard, translationCard } from '../widgets/blocks.js?v=eae654e601';
-import { exercise } from '../widgets/questions.js?v=eae654e601';
-import { PART_ZH, PARTS, weekRange, partScore, weeklyTable } from '../widgets/weekly.js?v=eae654e601';
-import { updateBadge } from './shell.js?v=eae654e601';
+import * as core from '../core.js?v=f46691462d';
+import { store, library, syncer } from '../state.js?v=f46691462d';
+import { today } from '../store.js?v=f46691462d';
+import { h, put, pct, icon, toast, formatDate, shortDate, stat, showSheet, hideSheet } from '../dom.js?v=f46691462d';
+import { rerender } from '../nav.js?v=f46691462d';
+import { sayBtn } from '../widgets/audio.js?v=f46691462d';
+import { dictationCard, translationCard } from '../widgets/blocks.js?v=f46691462d';
+import { exercise } from '../widgets/questions.js?v=f46691462d';
+import { PART_ZH, PARTS, weekRange, partScore, weeklyTable } from '../widgets/weekly.js?v=f46691462d';
+import { updateBadge } from './shell.js?v=f46691462d';
 
 const PART_HINT = {
   vocab: '這一週的單字，問法和當天的小測驗不一樣。',

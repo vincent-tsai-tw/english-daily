@@ -1,10 +1,10 @@
 // The weekly review test as other pages see it: labels, the week's date range, the home-page
 // card that offers the test and the dashboard's table of past tests. The rules are in core.js.
 
-import * as core from '../core.js?v=eae654e601';
-import { store, library } from '../state.js?v=eae654e601';
-import { today } from '../store.js?v=eae654e601';
-import { h, pct, shortDate } from '../dom.js?v=eae654e601';
+import * as core from '../core.js?v=f46691462d';
+import { store, library } from '../state.js?v=f46691462d';
+import { today } from '../store.js?v=f46691462d';
+import { h, pct, shortDate } from '../dom.js?v=f46691462d';
 
 export const PART_ZH = { vocab: '單字', grammar: '文法', dict: '聽寫', trans: '翻譯' };
 export const PARTS = Object.keys(core.WEEKLY_CAPS);

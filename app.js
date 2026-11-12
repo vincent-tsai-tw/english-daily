@@ -4,23 +4,23 @@
 // syncs to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 // This file only wires the pieces together: routes, shell events and boot.
 
-import * as speech from './speech.js?v=eae654e601';
-import { store, library, syncer } from './state.js?v=eae654e601';
-import { $, put, toast, hideSheet } from './dom.js?v=eae654e601';
-import { Router, hashParts } from './router.js?v=eae654e601';
-import { onRoute } from './nav.js?v=eae654e601';
-import { PULL_EVERY_MS } from './sync.js?v=eae654e601';
-import { profilePage, welcomePage, errorBox, setQuiet, paintQuiet, updateBadge, paintSyncLine, paintTodo, paintBell, openUpdates } from './pages/shell.js?v=eae654e601';
-import { homePage } from './pages/home.js?v=eae654e601';
-import { sectionPage, challengePage } from './pages/lesson.js?v=eae654e601';
-import { reviewPage } from './pages/review.js?v=eae654e601';
-import { practicePage } from './pages/practice.js?v=eae654e601';
-import { dashboardPage } from './pages/dashboard.js?v=eae654e601';
-import { historyPage } from './pages/history.js?v=eae654e601';
-import { settingsPage, goalsPage } from './pages/settings.js?v=eae654e601';
-import { notesPage } from './pages/notes.js?v=eae654e601';
-import { weeklyPage } from './pages/weekly.js?v=eae654e601';
-import { LOOKUP_IN, wordAtPoint, openDictionary } from './widgets/dictionary.js?v=eae654e601';
+import * as speech from './speech.js?v=f46691462d';
+import { store, library, syncer } from './state.js?v=f46691462d';
+import { $, put, toast, hideSheet } from './dom.js?v=f46691462d';
+import { Router, hashParts } from './router.js?v=f46691462d';
+import { onRoute } from './nav.js?v=f46691462d';
+import { PULL_EVERY_MS } from './sync.js?v=f46691462d';
+import { profilePage, welcomePage, errorBox, setQuiet, paintQuiet, updateBadge, paintSyncLine, paintTodo, paintBell, openUpdates } from './pages/shell.js?v=f46691462d';
+import { homePage } from './pages/home.js?v=f46691462d';
+import { sectionPage, challengePage } from './pages/lesson.js?v=f46691462d';
+import { reviewPage } from './pages/review.js?v=f46691462d';
+import { practicePage } from './pages/practice.js?v=f46691462d';
+import { dashboardPage } from './pages/dashboard.js?v=f46691462d';
+import { historyPage } from './pages/history.js?v=f46691462d';
+import { settingsPage, goalsPage } from './pages/settings.js?v=f46691462d';
+import { notesPage } from './pages/notes.js?v=f46691462d';
+import { weeklyPage } from './pages/weekly.js?v=f46691462d';
+import { LOOKUP_IN, wordAtPoint, openDictionary } from './widgets/dictionary.js?v=f46691462d';
 
 // `idle` pages have nothing half-typed, so a sync or an app update may re-render or reload them.
 const router = new Router()

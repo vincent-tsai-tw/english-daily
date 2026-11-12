@@ -1,10 +1,10 @@
 // The parts of the page around the current view: profile picker, welcome and error screens, the
 // quiet-mode button, the review badge, the sync line, the unanswered markers and the update bell.
 
-import { store, library, syncer } from '../state.js?v=eae654e601';
-import { readText, writeText } from '../store.js?v=eae654e601';
-import { h, $, put, icon, formatDate, formatTime, toast, showSheet } from '../dom.js?v=eae654e601';
-import { rerender } from '../nav.js?v=eae654e601';
+import { store, library, syncer } from '../state.js?v=f46691462d';
+import { readText, writeText } from '../store.js?v=f46691462d';
+import { h, $, put, icon, formatDate, formatTime, toast, showSheet } from '../dom.js?v=f46691462d';
+import { rerender } from '../nav.js?v=f46691462d';
 
 const SEEN_KEY = 'english-daily:seen-release';
 

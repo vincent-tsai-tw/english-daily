@@ -1,16 +1,16 @@
 // The six sections of a lesson, the section page that walks through them, and the challenge page.
 
-import * as core from '../core.js?v=eae654e601';
-import * as speech from '../speech.js?v=eae654e601';
-import { store, library } from '../state.js?v=eae654e601';
-import { today } from '../store.js?v=eae654e601';
-import { h, put, icon, toast, formatDate, copyText, levelTag } from '../dom.js?v=eae654e601';
-import { SECTIONS, nextSectionOf } from '../sections.js?v=eae654e601';
-import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=eae654e601';
-import { diffView, scoreLine, vocabItems, readingBlock, listeningBlock, translationCard } from '../widgets/blocks.js?v=eae654e601';
-import { questionList } from '../widgets/questions.js?v=eae654e601';
-import { grammarGuide, exampleLine } from '../widgets/grammar.js?v=eae654e601';
-import { setQuiet } from './shell.js?v=eae654e601';
+import * as core from '../core.js?v=f46691462d';
+import * as speech from '../speech.js?v=f46691462d';
+import { store, library } from '../state.js?v=f46691462d';
+import { today } from '../store.js?v=f46691462d';
+import { h, put, icon, toast, formatDate, copyText, levelTag } from '../dom.js?v=f46691462d';
+import { SECTIONS, nextSectionOf } from '../sections.js?v=f46691462d';
+import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=f46691462d';
+import { diffView, scoreLine, vocabItems, readingBlock, listeningBlock, translationCard } from '../widgets/blocks.js?v=f46691462d';
+import { questionList } from '../widgets/questions.js?v=f46691462d';
+import { grammarGuide, exampleLine } from '../widgets/grammar.js?v=f46691462d';
+import { setQuiet } from './shell.js?v=f46691462d';
 
 // --- Vocabulary, reading, grammar, listening ---------------------------------------------------
 

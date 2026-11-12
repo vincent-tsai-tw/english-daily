@@ -1,15 +1,15 @@
 // Free practice: unlimited random items from every lesson so far, in six modes. Weak words and
 // weak grammar points come up more often.
 
-import * as core from '../core.js?v=eae654e601';
-import * as speech from '../speech.js?v=eae654e601';
-import { store, library } from '../state.js?v=eae654e601';
-import { today, isWeak } from '../store.js?v=eae654e601';
-import { h, put, toast, pct, randomItem, shuffle } from '../dom.js?v=eae654e601';
-import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=eae654e601';
-import { PASS, TRANS_PASS, diffView, scoreLine, sentenceField, textField } from '../widgets/blocks.js?v=eae654e601';
-import { exercise } from '../widgets/questions.js?v=eae654e601';
-import { updateBadge } from './shell.js?v=eae654e601';
+import * as core from '../core.js?v=f46691462d';
+import * as speech from '../speech.js?v=f46691462d';
+import { store, library } from '../state.js?v=f46691462d';
+import { today, isWeak } from '../store.js?v=f46691462d';
+import { h, put, toast, pct, randomItem, shuffle } from '../dom.js?v=f46691462d';
+import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=f46691462d';
+import { PASS, TRANS_PASS, diffView, scoreLine, sentenceField, textField } from '../widgets/blocks.js?v=f46691462d';
+import { exercise } from '../widgets/questions.js?v=f46691462d';
+import { updateBadge } from './shell.js?v=f46691462d';
 
 const MODE_ZH = { dict: '聽寫', shadow: '跟讀', vocab: '單字', grammar: '文法', order: '重組', trans: '翻譯' };
 export const PRACTICE_MODES = core.PRACTICE_MODE_IDS.map((id) => [id, MODE_ZH[id]]);

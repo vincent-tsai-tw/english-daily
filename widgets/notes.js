@@ -1,10 +1,10 @@
 // The learner's notes to the teacher as the home page and dashboard see them: the overview
 // (open, closed, answered, unread replies) and the card that links to the notes page.
 
-import * as core from '../core.js?v=eae654e601';
-import { store, library } from '../state.js?v=eae654e601';
-import { readText } from '../store.js?v=eae654e601';
-import { h } from '../dom.js?v=eae654e601';
+import * as core from '../core.js?v=f46691462d';
+import { store, library } from '../state.js?v=f46691462d';
+import { readText } from '../store.js?v=f46691462d';
+import { h } from '../dom.js?v=f46691462d';
 
 export const notesSeenKey = () => `english-daily:notes-seen:${store.slug}`; // newest reply date already seen on this device
 export const notesOverview = () => core.notesSummary(store.state.notes, library.index, readText(notesSeenKey()));
