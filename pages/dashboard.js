@@ -2,20 +2,13 @@
 // skill trends, level history, grammar mastery, vocabulary, essays and habits. Charts follow the
 // dataviz rules: one hue per job, no colour alone, text in text colours.
 
-import * as core from '../core.js?v=61e1476431';
-import { store, library } from '../state.js?v=61e1476431';
-import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=61e1476431';
-import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=61e1476431';
-import { SECTIONS } from '../sections.js?v=61e1476431';
-import { notesCard } from '../widgets/notes.js?v=61e1476431';
-
-// Where an advisor method's `action` opens in the app.
-function actionHref(action) {
-  const [kind, arg] = String(action || '').split(':');
-  if (kind === 'practice' && arg) return `#/practice/${arg}`;
-  if (kind === 'lesson' && arg) return `#/l/${library.currentLessonDate()}/${arg}`;
-  return { review: '#/review', history: '#/history', goals: '#/goals', challenge: `#/l/${library.currentLessonDate()}/challenge` }[kind] || null;
-}
+import * as core from '../core.js?v=eae654e601';
+import { store, library } from '../state.js?v=eae654e601';
+import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=eae654e601';
+import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=eae654e601';
+import { SECTIONS } from '../sections.js?v=eae654e601';
+import { notesCard } from '../widgets/notes.js?v=eae654e601';
+import { weeklyTable } from '../widgets/weekly.js?v=eae654e601';
 
 function advisorCard(p, reports) {
   const dates = Object.keys(reports || {}).sort();
@@ -40,7 +33,7 @@ function advisorCard(p, reports) {
       h('strong', {}, w.title_zh), h('p', {}, w.evidence_zh), h('p', { class: 'muted' }, w.why_zh)))),
     h('p', { class: 'adv-h' }, '最適合的學習方法'),
     h('div', { class: 'adv-methods' }, report.methods.map((m) => {
-      const href = p.self ? actionHref(m.action) : null;
+      const href = p.self ? core.advisorHref(m.action, library.currentLessonDate()) : null;
       return h('div', { class: 'adv-method' }, h('strong', {}, m.title_zh), h('p', {}, m.how_zh), h('p', { class: 'muted' }, m.why_zh),
         href ? h('a', { class: 'btn subtle', href }, '去做 ›') : null);
     })),
@@ -224,6 +217,8 @@ export async function dashboardPage(slug) {
       stat(`${completed}`, '完成的課'), stat(`${answered}`, '答題數')),
     dashSection('學習日曆', '最近 8 週，顏色越深練得越久。', calendarHeatmap(activity)),
     dashSection('各項能力', '每一課的正確率；數字是最近 3 課的平均，有 5 課以上時箭頭和更早的課比。點一列看每課的分數。', skillTrends(results)),
+    dashSection('每週總複習', '每週日把那一週學的再測一次；分數是隔了幾天之後還記得多少。',
+      weeklyTable(doc.weekly, p.self) || h('p', { class: 'muted' }, '還沒有做過總複習。', p.self ? h('a', { href: '#/weekly' }, '看這一週的測驗 ›') : null)),
     dashSection('等級歷程', null, levelJourney(p.index)),
     dashSection('文法掌握', '每個學過的文法點（含複習題）的正確率。', grammarBars(core.grammarMastery(results, p.index))),
     dashSection('單字', null, vocabBlock(doc, p.deck)),

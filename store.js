@@ -3,7 +3,7 @@
 // the few named operations the pages use. Cross-device merging is in sync.js; the document's
 // shape and merge rules are in core.js.
 
-import * as core from './core.js?v=61e1476431';
+import * as core from './core.js?v=eae654e601';
 
 const ME_KEY = 'english-daily:me';
 const LEGACY_KEY = 'english-daily:v1'; // progress from before profiles: it belonged to the first learner
@@ -140,6 +140,11 @@ export class Store {
     };
   }
 
+  // The same pair for answers that carry their own score (dictation, translation).
+  scoredStore(date, key) {
+    return { get: () => this.ans(date, key), set: (value, score) => this.setAns(date, key, value, score) };
+  }
+
   activeMistakes() {
     return Object.values(this.state.mistakes).filter((m) => !m.fixed).sort((a, b) => a.t - b.t);
   }
@@ -185,6 +190,16 @@ export class Store {
     this.save();
   }
 
+  // A word answered wrong outside the review comes back in today's review. With `create`, a
+  // word that has no card yet (its lesson's word section was never finished) gets one.
+  relearn(word, create = false) {
+    const card = this.card(word);
+    if (card ? card.due <= today() : !create) return false;
+    this.setCard(word, { ...(card || core.newCard(today())), due: today() });
+    this.save();
+    return true;
+  }
+
   // Scores computed later for answers that had none (see core.scoreAnswers).
   addResults(date, scores) {
     const res = (this.state.results[date] ||= {});
@@ -226,6 +241,53 @@ export class Store {
   // Consecutive days with any activity, counted the way the dashboard counts them.
   streak() {
     return core.streakOf(Object.keys(core.dayActivity(this.state)), today());
+  }
+
+  // --- Weekly review test (the record's shape is in core.js) -----------------------------------
+
+  // Read fresh each time: a sync may replace the weekly object.
+  weekly(week) { return this.state.weekly[week] || null; }
+
+  // Fix the questions of a week's test; a test that already started keeps its own.
+  startWeekly(week, plan) {
+    if (this.state.weekly[week]) return;
+    this.state.weekly[week] = { week, started: now(), t: now(), plan, items: {} };
+    this.touch();
+    this.save();
+  }
+
+  // A {get, set} pair for one question of a test. `score` is right/wrong or 0..1. An answer is
+  // final once given and nothing changes after the test is handed in: `set` returns whether the
+  // answer was taken. A taken answer to a question (`mistake`: {date, kind, i}) updates the
+  // mistake list like a lesson answer does, and a word answered wrong (`word`) comes back in
+  // today's review. The mistake is filed under the lesson's own answer key, so 錯題重練 asks the
+  // lesson's form of a word and a right answer here clears a mistake made on the lesson day.
+  weeklyStore(week, ref, { mistake, word } = {}) {
+    return {
+      get: () => this.weekly(week)?.items?.[ref]?.v,
+      set: (value, score) => {
+        const record = this.weekly(week);
+        if (!record || record.done || record.items[ref]) return false;
+        const s = typeof score === 'boolean' ? Number(score) : score;
+        const scored = typeof s === 'number' && Number.isFinite(s);
+        record.items[ref] = { v: value, t: now(), ...(scored ? { s: Math.round(s * 1000) / 1000 } : {}) };
+        record.t = now();
+        if (mistake && scored) this.recordMistake(mistake, s === 1);
+        if (word && scored && s < 1) this.relearn(word, true);
+        this.touch();
+        this.save();
+        return true;
+      },
+    };
+  }
+
+  finishWeekly(week) {
+    const record = this.weekly(week);
+    if (!record || record.done) return;
+    record.done = now();
+    record.t = record.done;
+    this.touch();
+    this.save();
   }
 
   // --- Notes to the teacher -------------------------------------------------------------------

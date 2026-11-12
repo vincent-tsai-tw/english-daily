@@ -549,3 +549,22 @@ select.field { appearance: auto; }
 .note-reply strong { color: var(--accent); font-size: 14px; }
 .note-reply p { margin: 0; }
 .note .row { justify-content: flex-end; }
+
+/* Weekly review test */
+.week-list a, .week-closed { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--sep); color: var(--text); }
+.week-name { font-weight: 600; }
+.week-name small { margin-left: 8px; font-weight: 400; color: var(--text-3); font-size: 13px; }
+.week-state { font-size: 15px; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.week-state.on { color: var(--link); font-weight: 600; }
+.week-closed { color: var(--text-2); }
+.week-lessons { list-style: none; padding: 0; }
+.weekly-cards { list-style: none; padding: 0; display: grid; gap: 12px; }
+.weekly-cards li + li { margin-top: 0; }
+.missed-words { list-style: none; padding: 0; }
+.missed-words li { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 2px 8px; padding: 8px 0; border-bottom: 1px solid var(--sep); }
+.missed-words li small { grid-column: 1 / -1; }
+.table-wrap { overflow-x: auto; }
+.weekly-table { margin-left: 0; width: 100%; }
+.weekly-table th { text-align: left; font-weight: 500; color: var(--text-3); font-size: 13px; padding: 2px 14px 6px 0; }
+.weekly-table td { padding: 6px 14px 6px 0; }
+.weekly-table td strong { color: var(--text); }

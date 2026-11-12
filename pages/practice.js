@@ -1,15 +1,15 @@
 // Free practice: unlimited random items from every lesson so far, in six modes. Weak words and
 // weak grammar points come up more often.
 
-import * as core from '../core.js?v=61e1476431';
-import * as speech from '../speech.js?v=61e1476431';
-import { store, library } from '../state.js?v=61e1476431';
-import { today, isWeak } from '../store.js?v=61e1476431';
-import { h, put, toast, pct, randomItem, shuffle } from '../dom.js?v=61e1476431';
-import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=61e1476431';
-import { PASS, TRANS_PASS, diffView, scoreLine, sentenceField, textField } from '../widgets/blocks.js?v=61e1476431';
-import { exercise } from '../widgets/questions.js?v=61e1476431';
-import { updateBadge } from './shell.js?v=61e1476431';
+import * as core from '../core.js?v=eae654e601';
+import * as speech from '../speech.js?v=eae654e601';
+import { store, library } from '../state.js?v=eae654e601';
+import { today, isWeak } from '../store.js?v=eae654e601';
+import { h, put, toast, pct, randomItem, shuffle } from '../dom.js?v=eae654e601';
+import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=eae654e601';
+import { PASS, TRANS_PASS, diffView, scoreLine, sentenceField, textField } from '../widgets/blocks.js?v=eae654e601';
+import { exercise } from '../widgets/questions.js?v=eae654e601';
+import { updateBadge } from './shell.js?v=eae654e601';
 
 const MODE_ZH = { dict: '聽寫', shadow: '跟讀', vocab: '單字', grammar: '文法', order: '重組', trans: '翻譯' };
 export const PRACTICE_MODES = core.PRACTICE_MODE_IDS.map((id) => [id, MODE_ZH[id]]);
@@ -157,11 +157,7 @@ export async function practicePage(requested) {
         const ok = core.normalizeAnswer(input.value) === core.normalizeAnswer(v.word);
         counted(ok);
         const card = store.card(v.word);
-        if (!ok && card && card.due > today()) {
-          store.setCard(v.word, { ...card, due: today() });
-          store.save();
-          updateBadge();
-        }
+        if (!ok && store.relearn(v.word)) updateBadge();
         checkBtn.hidden = true;
         nextBtn.hidden = false;
         put(out, h('p', { class: `explain ${ok ? 'ok' : 'bad'}` }, ok ? '正確！' : `答案是 ${v.word}${card ? '，已加到今天的單字複習。' : ''}`),
@@ -257,5 +253,7 @@ export async function practicePage(requested) {
     h('nav', { class: 'seg wide', 'aria-label': '練習項目' }, PRACTICE_MODES.map(([m, label]) =>
       h('a', { href: `#/practice/${m}`, class: m === mode ? 'on' : '' }, label))),
     tally,
-    stage);
+    stage,
+    h('a', { class: 'card notice', href: '#/weekly' },
+      h('strong', {}, '每週總複習測驗'), h('span', { class: 'muted' }, '每週日開放：把那一週學的單字、文法、聽寫、翻譯再測一次，老師依結果安排下一週。')));
 }

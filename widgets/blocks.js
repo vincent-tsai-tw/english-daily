@@ -1,12 +1,12 @@
 // Blocks shared by lessons, challenges and free practice: reading with tappable vocabulary,
 // dictation, dialogues, and the input fields and score lines they use.
 
-import * as core from '../core.js?v=61e1476431';
-import * as speech from '../speech.js?v=61e1476431';
-import { store, library } from '../state.js?v=61e1476431';
-import { h, put, pct, formatDate, showSheet } from '../dom.js?v=61e1476431';
-import { sayBtn, slowBtn, playButton, rateToggle, ttsOpts } from './audio.js?v=61e1476431';
-import { questionList } from './questions.js?v=61e1476431';
+import * as core from '../core.js?v=eae654e601';
+import * as speech from '../speech.js?v=eae654e601';
+import { store, library } from '../state.js?v=eae654e601';
+import { h, put, pct, formatDate, showSheet } from '../dom.js?v=eae654e601';
+import { sayBtn, slowBtn, playButton, rateToggle, ttsOpts } from './audio.js?v=eae654e601';
+import { questionList } from './questions.js?v=eae654e601';
 
 export const PASS = 0.9; // a spoken or typed sentence this close to the original counts as right
 export const TRANS_PASS = 0.8; // a translation this close to a reference counts as right in practice
@@ -81,26 +81,52 @@ export function readingBlock(L, reading, items, kind, accent) {
   ];
 }
 
-export function dictationItem(date, key, n, sentence) {
+// A dictation sentence: play it, type it, compare. `answers` is a {get, set(value, score)} pair;
+// with `once` the first check is final (the weekly test), otherwise the learner may try again.
+export function dictationCard(n, sentence, answers, { attrs = {}, once = false } = {}) {
   const out = h('div');
   const show = (value) => {
     const r = core.alignWords(sentence, value);
     put(out, diffView(r), scoreLine(r.score));
   };
+  const freeze = () => { input.disabled = true; btn.hidden = true; };
   const check = () => {
     const value = input.value.trim();
-    if (!value) return;
-    store.setAns(date, key, value, core.alignWords(sentence, value).score);
+    if (!value || input.disabled) return;
+    answers.set(value, core.alignWords(sentence, value).score);
     show(value);
+    if (once) freeze();
   };
   const input = sentenceField('打出你聽到的句子', check);
-  const prev = store.ans(date, key);
-  if (prev) { input.value = prev; show(prev); }
-  return h('div', { class: 'card', 'data-ans': `${date}|${key}` },
+  const btn = h('button', { class: 'btn', type: 'button', onclick: check }, '對答案');
+  const prev = answers.get();
+  if (prev) { input.value = prev; show(prev); if (once) freeze(); }
+  return h('div', { class: 'card', ...attrs },
     h('div', { class: 'row' }, h('span', { class: 'num' }, `${n}`), sayBtn(sentence, '播放'), slowBtn(sentence)),
-    input,
-    h('button', { class: 'btn', type: 'button', onclick: check }, '對答案'),
-    out);
+    input, btn, out);
+}
+
+export const dictationItem = (date, key, n, sentence) => dictationCard(n, sentence, store.scoredStore(date, key), { attrs: { 'data-ans': `${date}|${key}` } });
+
+// A sentence to put into English, compared with the reference and its alternatives.
+export function translationCard(t, answers, { attrs = {}, once = false } = {}) {
+  const input = h('textarea', { class: 'field', rows: 2, placeholder: '用英文寫出來' }, answers.get() || '');
+  const out = h('div');
+  const show = (value) => put(out,
+    h('p', { class: 'ref' }, '參考：', t.en, ' ', sayBtn(t.en)),
+    t.alt?.length ? h('p', { class: 'muted' }, '也可以：', t.alt.join(' ／ ')) : null,
+    h('p', { class: 'muted' }, `和參考答案的相似度 ${pct(core.translationScore(t, value))}（意思對就好，不必一字不差）`));
+  const freeze = () => { input.disabled = true; btn.hidden = true; };
+  const check = () => {
+    const value = input.value.trim();
+    if (!value || input.disabled) return;
+    answers.set(value, core.translationScore(t, value));
+    show(value);
+    if (once) freeze();
+  };
+  const btn = h('button', { class: 'btn', type: 'button', onclick: check }, '對照答案');
+  if (answers.get()) { show(answers.get()); if (once) freeze(); }
+  return h('div', { class: 'card', ...attrs }, h('p', { class: 'zh-big' }, t.zh), input, btn, out);
 }
 
 // Dialogue with a hidden transcript, comprehension questions and dictation. `prefix` is '' for

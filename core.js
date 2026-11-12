@@ -222,7 +222,7 @@ export function gradingPrompt({ level, task, mustUse, text }) {
 // --- Progress state, migration and cross-device merge ---------------------------------------
 
 // Fields that sync between devices. Settings and the sync token stay on each device.
-export const SYNCED = ['done', 'answers', 'results', 'srs', 'mistakes', 'pending', 'activity', 'reviewLog', 'practice', 'profile', 'words', 'notes'];
+export const SYNCED = ['done', 'answers', 'results', 'srs', 'mistakes', 'pending', 'activity', 'reviewLog', 'practice', 'profile', 'words', 'notes', 'weekly'];
 export const PROFILE_NOTE_ID = 'profile-note'; // the note migrated from the old single profile.note field
 export const STATE_VERSION = 2;
 
@@ -277,6 +277,22 @@ function mergeMap(a, b, pick) {
 }
 const mergeNested = (a, b, pick) => mergeMap(a, b, (x, y) => mergeMap(x, y, pick));
 
+// One week's review test taken on two devices. The questions are those of a device that handed
+// the test in (else of whichever started first); an answer is final once given, so the earlier
+// one stays; the test is finished as soon as either device finished it.
+function mergeWeekly(a, b) {
+  const rank = (r) => [r.done ? 0 : 1, r.started || 0, stableStringify(r.plan || [])];
+  const [ra, rb] = [rank(a), rank(b)];
+  const k = ra.findIndex((x, i) => x !== rb[i]);
+  const { done: _done, ...base } = k >= 0 && rb[k] < ra[k] ? b : a;
+  const done = Math.min(a.done || Infinity, b.done || Infinity);
+  const earlier = (x, y) => {
+    const [tx, ty] = [x?.t || 0, y?.t || 0];
+    return ty < tx || (ty === tx && stableStringify(y) < stableStringify(x)) ? y : x;
+  };
+  return { ...base, t: Math.max(a.t || 0, b.t || 0), items: mergeMap(a.items, b.items, earlier), ...(Number.isFinite(done) ? { done } : {}) };
+}
+
 // Merge two synced documents. Every entry carries a timestamp and the newer one wins, so the
 // result does not depend on which device merges first.
 export function mergeDocs(a, b) {
@@ -297,6 +313,7 @@ export function mergeDocs(a, b) {
     profile: newer(a.profile || {}, b.profile || {}),
     words: mergeMap(a.words, b.words, newer),
     notes: mergeMap(a.notes, b.notes, newer),
+    weekly: mergeMap(a.weekly, b.weekly, mergeWeekly),
   };
 }
 
@@ -333,6 +350,12 @@ export function stableStringify(x) {
 }
 
 export const sameDoc = (a, b) => stableStringify(a) === stableStringify(b);
+
+// The top-level fields of a remote document this build does not know (a newer build on another
+// device added them): the sync writes them back untouched instead of dropping them.
+export function unknownFields(raw) {
+  return Object.fromEntries(Object.entries(isObj(raw) ? raw : {}).filter(([k]) => k !== 'v' && !SYNCED.includes(k)));
+}
 
 // --- Answer keys (the same table as english_daily/lessons.py ITEMS) ---------------------------
 // Every answer is stored under "<prefix>.<index>" (write.submitted for the essay). This table says
@@ -373,6 +396,16 @@ export const CHALLENGE_ITEMS = Object.keys(ITEMS).filter((p) => ITEMS[p].section
 // in english_daily/lessons.py SECTION_IDS and PRACTICE_MODES, which the advisor's actions use).
 export const SECTION_IDS = ['vocab', 'read', 'grammar', 'listen', 'speak', 'write'];
 export const PRACTICE_MODE_IDS = ['dict', 'shadow', 'vocab', 'grammar', 'order', 'trans'];
+// Where an advisor method's `action` opens in the app, or null (the same values pass
+// english_daily/gist.py ADVISOR_ACTIONS): practice:<mode>, lesson:<section> or a plain name.
+export const ADVISOR_PLAIN_ACTIONS = { review: '#/review', history: '#/history', goals: '#/goals', weekly: '#/weekly', challenge: null };
+export function advisorHref(action, currentDate) {
+  const [kind, arg] = String(action || '').split(':');
+  if (kind === 'practice') return PRACTICE_MODE_IDS.includes(arg) ? `#/practice/${arg}` : null;
+  if (kind === 'lesson') return SECTION_IDS.includes(arg) ? `#/l/${currentDate}/${arg}` : null;
+  if (arg !== undefined || !(kind in ADVISOR_PLAIN_ACTIONS)) return null;
+  return ADVISOR_PLAIN_ACTIONS[kind] || `#/l/${currentDate}/${kind}`; // challenge belongs to the current lesson
+}
 export const REAL_TIME_MS = 1e12; // timestamps below this are placeholders from before timestamps existed
 
 // The key a word is stored under (cards, saved words).
@@ -393,34 +426,39 @@ export function clozeOf(v) {
 export const QUIZ_FORMS = ['meaning', 'cloze', 'word'];
 const QUIZ_OPTIONS = 4;
 
+// One question about word `i` of a lesson's vocabulary in the given form (QUIZ_FORMS); the weekly
+// review asks every word in a form the lesson's own quiz did not use. Same as lessons.vocab_question.
+export function vocabQuestion(vocab, i, form) {
+  const v = vocab[i];
+  if (!v) return undefined;
+  if (form === 'cloze') {
+    const hit = findPhrases(v.example, [v.word])[0];
+    const used = hit ? v.example.slice(hit.start, hit.end) : '';
+    return {
+      form, type: 'fill',
+      q: hit ? `${v.example.slice(0, hit.start)}___${v.example.slice(hit.end)}` : `___（${v.definition}）`,
+      answer: v.word, accept: used && used.toLowerCase() !== v.word.toLowerCase() ? [used] : [],
+      hint_zh: `${v.zh}（${v.pos}）`, explain_zh: `${v.zh}：${v.definition}`,
+    };
+  }
+  const field = form === 'meaning' ? 'zh' : 'word';
+  const correct = v[field];
+  const others = [];
+  for (let k = 1; k < vocab.length && others.length < QUIZ_OPTIONS - 1; k++) {
+    const candidate = vocab[(i + k) % vocab.length][field];
+    if (candidate !== correct && !others.includes(candidate)) others.push(candidate);
+  }
+  const answer = (i + 2) % (others.length + 1);
+  const options = [...others.slice(0, answer), correct, ...others.slice(answer)];
+  return {
+    form, type: 'mcq', q: form === 'meaning' ? `「${v.word}」是什麼意思？` : `哪個字的意思是「${v.definition}」？`,
+    options, answer, explain_zh: `${v.word}：${v.zh}。${v.example}`,
+  };
+}
+
 export function vocabQuiz(L) {
   const vocab = L.vocab || [];
-  return vocab.map((v, i) => {
-    const form = QUIZ_FORMS[i % QUIZ_FORMS.length];
-    if (form === 'cloze') {
-      const hit = findPhrases(v.example, [v.word])[0];
-      const used = hit ? v.example.slice(hit.start, hit.end) : '';
-      return {
-        form, type: 'fill',
-        q: hit ? `${v.example.slice(0, hit.start)}___${v.example.slice(hit.end)}` : `___（${v.definition}）`,
-        answer: v.word, accept: used && used.toLowerCase() !== v.word.toLowerCase() ? [used] : [],
-        hint_zh: `${v.zh}（${v.pos}）`, explain_zh: `${v.zh}：${v.definition}`,
-      };
-    }
-    const field = form === 'meaning' ? 'zh' : 'word';
-    const correct = v[field];
-    const others = [];
-    for (let k = 1; k < vocab.length && others.length < QUIZ_OPTIONS - 1; k++) {
-      const candidate = vocab[(i + k) % vocab.length][field];
-      if (candidate !== correct && !others.includes(candidate)) others.push(candidate);
-    }
-    const answer = (i + 2) % (others.length + 1);
-    const options = [...others.slice(0, answer), correct, ...others.slice(answer)];
-    return {
-      form, type: 'mcq', q: form === 'meaning' ? `「${v.word}」是什麼意思？` : `哪個字的意思是「${v.definition}」？`,
-      options, answer, explain_zh: `${v.word}：${v.zh}。${v.example}`,
-    };
-  });
+  return vocab.map((_, i) => vocabQuestion(vocab, i, QUIZ_FORMS[i % QUIZ_FORMS.length]));
 }
 
 // "ch.read.0" -> "ch.read", "write.submitted" -> "write": everything before the last dot.
@@ -439,6 +477,16 @@ export function itemOf(lesson, key) {
   return /^\d+$/.test(index) ? ITEMS[prefix]?.of(lesson)?.[Number(index)] : undefined;
 }
 
+// The score (0..1) of one answer to a question, a dictated or spoken sentence or a translation;
+// undefined when the answer carries no score (nothing typed, quiet mode).
+export function scoreItem(scoring, item, a) {
+  if (a == null) return undefined;
+  if (scoring === 'question') return (item.type === 'fill' ? checkFill(item, a) : a === item.answer) ? 1 : 0;
+  if (scoring === 'spoken') return typeof a === 'string' && a && a !== 'quiet' ? alignWords(item, a).score : undefined;
+  if (scoring === 'translation') return typeof a === 'string' && a ? translationScore(item, a) : undefined;
+  return undefined;
+}
+
 // Scores for answers that have none yet: {key: score}. Questions are right or wrong, spoken and
 // typed sentences are aligned with the original, translations with the reference (and its
 // alternatives), the essay by its automatic checks. Every device computes the same values.
@@ -450,11 +498,8 @@ export function scoreAnswers(lesson, answers, results = {}) {
     const item = itemOf(lesson, key);
     if (a == null || item === undefined) continue;
     const scoring = ITEMS[prefixOf(key)]?.scoring;
-    let score;
-    if (scoring === 'question') score = (item.type === 'fill' ? checkFill(item, a) : a === item.answer) ? 1 : 0;
-    else if (scoring === 'spoken') { if (typeof a === 'string' && a && a !== 'quiet') score = alignWords(item, a).score; }
-    else if (scoring === 'translation') { if (typeof a === 'string' && a) score = translationScore(item, a); }
-    else if (scoring === 'essay' && a) {
+    let score = scoreItem(scoring, item, a);
+    if (scoring === 'essay' && a) {
       const draft = answers['write.draft']?.v;
       if (typeof draft === 'string') { const checks = writingChecks(item, draft); score = checks.filter((c) => c.ok).length / checks.length; }
     }
@@ -475,6 +520,162 @@ export function itemKeys(entry, prefixes) {
 export function itemStatus(entry, prefixes, isAnswered) {
   const keys = itemKeys(entry, prefixes);
   return { total: keys.length, missing: keys.filter((k) => !isAnswered(k)).length };
+}
+
+// --- Weekly review test -------------------------------------------------------------------------
+// Once a week (from Sunday on) the learner retakes a sample of everything studied that week: the
+// words in a form the lesson's quiz did not use, grammar exercises, dictation and translation.
+// The questions are chosen once, when the test starts, and stored with the answers so every
+// device and english_daily/progress.py read the same test:
+//   weekly: {<Monday>: {week, started, t, plan: [{ref: "<date>|<answer key>", form?}],
+//                       items: {<ref>: {v, s, t}}, done?}}
+// A week is named by its Monday; its test opens on its Sunday.
+
+export const WEEKLY_CAPS = { vocab: 20, grammar: 12, dict: 4, trans: 4 }; // questions per part, in test order
+const WEEKLY_PER_MINUTE = 2.5; // questions a learner gets through in a minute, for the time estimate
+const WEEKLY_MIN_MINUTES = 5;
+export const weeklyMinutes = (plan) => Math.max(WEEKLY_MIN_MINUTES, Math.round(plan.length / WEEKLY_PER_MINUTE));
+
+// The Monday (YYYY-MM-DD) of the week a day belongs to (english_daily/dates.py week_of).
+export function weekOf(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return addDays(date, -((new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7));
+}
+export const weekEnd = (week) => addDays(week, 6);
+export const weeklyOpen = (week, today) => today >= weekEnd(week);
+
+export const refOf = (date, key) => `${date}|${key}`;
+// "2026-11-03|ch.read.2" -> {date, key: "ch.read.2", prefix: "ch.read", i: 2}; `i` is null when
+// the key does not end in a number (progress.parse_ref reads refs the same way).
+export function parseRef(ref) {
+  const s = String(ref);
+  const bar = s.indexOf('|');
+  const key = s.slice(bar + 1);
+  const prefix = prefixOf(key);
+  const tail = key.slice(prefix.length + 1);
+  return { date: s.slice(0, bar), key, prefix, i: /^\d+$/.test(tail) ? Number(tail) : null };
+}
+
+// The lessons of a week the learner has touched (a section finished or anything answered), oldest
+// first (progress.studied_dates: the advisor reports a skipped test by the same rule).
+export function weeklyDates(index, state, week) {
+  const end = weekEnd(week);
+  const touched = (d) => Object.keys(state?.done?.[d] || {}).length + Object.keys(state?.answers?.[d] || {}).length > 0;
+  return (index || []).map((x) => x.date).filter((d) => d >= week && d <= end && touched(d)).sort();
+}
+
+// A lesson's items of one kind in the order the test draws them: missed on the day first (lowest
+// score first; a word whose card is weak counts as missed), then never answered, then the rest.
+function weeklyCandidates(L, prefix, results, srs) {
+  const scores = results?.[L.date] || {};
+  const rows = (ITEMS[prefix].of(L) || []).map((_, i) => {
+    const s = scores[`${prefix}.${i}`]?.s;
+    const scored = typeof s === 'number';
+    const weak = prefix === 'vocab' && isWeakCard(srs?.[wkey(L.vocab[i].word)]);
+    return { i, tier: (scored && s < 1) || weak ? 0 : scored ? 2 : 1, s: scored ? s : 1 };
+  });
+  rows.sort((a, b) => a.tier - b.tier || a.s - b.s || a.i - b.i);
+  return rows.map(({ i }) => (prefix === 'vocab'
+    ? { ref: refOf(L.date, `vocab.${i}`), form: QUIZ_FORMS[(i + 1) % QUIZ_FORMS.length] } // not the form the lesson asked
+    : { ref: refOf(L.date, `${prefix}.${i}`) }));
+}
+
+// Take the first of every list, then the second of every list... up to `cap` entries.
+function roundRobin(lists, cap) {
+  const out = [];
+  for (let r = 0; out.length < cap && lists.some((l) => r < l.length); r++) {
+    for (const l of lists) if (r < l.length && out.length < cap) out.push(l[r]);
+  }
+  return out;
+}
+
+// The questions of a week's test, drawn evenly from the week's lessons. Parts alternate the
+// lesson order so the short parts (dictation, translation) do not all fall on the early lessons.
+export function weeklyPlan(lessons, { results = {}, srs = {} } = {}, caps = WEEKLY_CAPS) {
+  const byDate = [...lessons].sort((a, b) => a.date.localeCompare(b.date));
+  return Object.entries(caps).flatMap(([prefix, cap], k) => roundRobin(
+    (k % 2 ? [...byDate].reverse() : byDate).map((L) => weeklyCandidates(L, prefix, results, srs)), cap));
+}
+
+// What a plan entry asks: {prefix, i, scoring, item}, or null when the lesson no longer has it.
+export function weeklyQuestion(lesson, entry) {
+  const { key, prefix, i } = parseRef(entry.ref);
+  if (!ITEMS[prefix] || i == null) return null;
+  const item = prefix === 'vocab' && entry.form ? vocabQuestion(lesson.vocab || [], i, entry.form) : itemOf(lesson, key);
+  return item === undefined ? null : { prefix, i, scoring: ITEMS[prefix].scoring, item };
+}
+
+// The numbers of one test (same as progress.weekly_summary): questions asked and answered, the
+// mean score of the answered ones, the same per part, and the refs of the missed questions
+// (words and grammar answered wrong; dictation and translation only carry a score).
+export function weeklySummary(record) {
+  const parts = {};
+  const missed = [];
+  let asked = 0;
+  let answered = 0;
+  let sum = 0;
+  for (const entry of record?.plan || []) {
+    const { prefix } = parseRef(entry.ref);
+    const part = (parts[prefix] ||= { asked: 0, answered: 0, sum: 0 });
+    const s = record.items?.[entry.ref]?.s;
+    asked += 1;
+    part.asked += 1;
+    if (typeof s !== 'number') continue;
+    answered += 1;
+    part.answered += 1;
+    sum += s;
+    part.sum += s;
+    if (ITEMS[prefix]?.scoring === 'question' && s < 1) missed.push(entry.ref);
+  }
+  return {
+    asked, answered, score: answered ? sum / answered : null, missed,
+    parts: Object.fromEntries(Object.entries(parts).map(([p, v]) => [p, { asked: v.asked, answered: v.answered, acc: v.answered ? v.sum / v.answered : null }])),
+  };
+}
+
+// Finished tests, newest first.
+export const weeklyDone = (weekly) => Object.values(weekly || {}).filter((r) => r?.done && r.plan?.length).sort((a, b) => b.week.localeCompare(a.week));
+
+// What a finished test showed (progress.weekly_tests reads the same from the record): the words
+// that were missed and how each lesson's grammar did when asked again, weakest first.
+// `lessons` is {date: lesson}; questions about a lesson that is not there are skipped.
+export function weeklyReview(record, lessons) {
+  const missed = new Set(weeklySummary(record).missed);
+  const words = [];
+  const byDate = {};
+  for (const entry of record?.plan || []) {
+    const { date, prefix, i } = parseRef(entry.ref);
+    const L = lessons?.[date];
+    if (!L || i == null) continue;
+    if (prefix === 'vocab' && missed.has(entry.ref) && L.vocab?.[i]) words.push({ ...L.vocab[i], date });
+    const s = record.items?.[entry.ref]?.s;
+    if (prefix !== 'grammar' || typeof s !== 'number') continue;
+    const row = (byDate[date] ||= { date, point: L.grammar.point, zh: L.grammar.point_zh, right: 0, n: 0 });
+    row.right += s;
+    row.n += 1;
+  }
+  const grammar = Object.values(byDate).sort((a, b) => a.right / a.n - b.right / b.n);
+  return { words, grammar, missedGrammar: grammar.filter((g) => g.right < g.n) };
+}
+
+// Every week with something to test or a test on record, newest first:
+// [{week, dates, open, record}] (`dates`: the lessons studied that week).
+export function weeklyList(index, state, today) {
+  const first = [...(index || []).map((x) => x.date), ...Object.keys(state?.weekly || {})].sort()[0];
+  const out = [];
+  for (let week = weekOf(today); first && week >= weekOf(first); week = addDays(week, -7)) {
+    const dates = weeklyDates(index, state, week);
+    const record = state?.weekly?.[week] || null;
+    if (dates.length || record) out.push({ week, dates, open: weeklyOpen(week, today), record });
+  }
+  return out;
+}
+
+// The test to offer now: this week's from Sunday, else last week's; null when neither has
+// anything to test. `status` is new, started or done.
+export function weeklyDue(index, state, today) {
+  const row = weeklyList(index, state, today).find((w) => w.open && w.week >= addDays(weekOf(today), -7));
+  return row ? { ...row, status: row.record?.done ? 'done' : row.record ? 'started' : 'new' } : null;
 }
 
 // --- Skill statistics (same thresholds as english_daily/progress.py) -------------------------
@@ -514,7 +715,7 @@ export const SESSION_GAP_MS = 5 * 60 * 1000;
 export const MASTERED_INTERVAL = 21;
 export const DAYPARTS = [['清晨', 0, 6], ['早上', 6, 11], ['中午', 11, 14], ['下午', 14, 18], ['晚上', 18, 23], ['深夜', 23, 24]];
 
-// Every real answer, section and word-review time (ms) in a progress document.
+// Every real answer, section, word-review and weekly-test time (ms) in a progress document.
 export function eventTimes(doc) {
   const out = new Set();
   const real = (t) => typeof t === 'number' && t > REAL_TIME_MS;
@@ -523,6 +724,9 @@ export function eventTimes(doc) {
   }
   for (const marks of Object.values(doc?.done || {})) for (const t of Object.values(marks || {})) if (real(t)) out.add(t);
   for (const c of Object.values(doc?.srs || {})) if (real(c?.t)) out.add(c.t);
+  for (const w of Object.values(doc?.weekly || {})) {
+    for (const t of [w?.started, w?.done, ...Object.values(w?.items || {}).map((x) => x?.t)]) if (real(t)) out.add(t);
+  }
   return [...out].sort((a, b) => a - b);
 }
 

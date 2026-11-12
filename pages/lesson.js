@@ -1,16 +1,16 @@
 // The six sections of a lesson, the section page that walks through them, and the challenge page.
 
-import * as core from '../core.js?v=61e1476431';
-import * as speech from '../speech.js?v=61e1476431';
-import { store, library } from '../state.js?v=61e1476431';
-import { today } from '../store.js?v=61e1476431';
-import { h, put, icon, toast, formatDate, copyText, pct, levelTag } from '../dom.js?v=61e1476431';
-import { SECTIONS, nextSectionOf } from '../sections.js?v=61e1476431';
-import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=61e1476431';
-import { diffView, scoreLine, vocabItems, readingBlock, listeningBlock } from '../widgets/blocks.js?v=61e1476431';
-import { questionList } from '../widgets/questions.js?v=61e1476431';
-import { grammarGuide, exampleLine } from '../widgets/grammar.js?v=61e1476431';
-import { setQuiet } from './shell.js?v=61e1476431';
+import * as core from '../core.js?v=eae654e601';
+import * as speech from '../speech.js?v=eae654e601';
+import { store, library } from '../state.js?v=eae654e601';
+import { today } from '../store.js?v=eae654e601';
+import { h, put, icon, toast, formatDate, copyText, levelTag } from '../dom.js?v=eae654e601';
+import { SECTIONS, nextSectionOf } from '../sections.js?v=eae654e601';
+import { sayBtn, slowBtn, ttsOpts, micButton, voiceMode } from '../widgets/audio.js?v=eae654e601';
+import { diffView, scoreLine, vocabItems, readingBlock, listeningBlock, translationCard } from '../widgets/blocks.js?v=eae654e601';
+import { questionList } from '../widgets/questions.js?v=eae654e601';
+import { grammarGuide, exampleLine } from '../widgets/grammar.js?v=eae654e601';
+import { setQuiet } from './shell.js?v=eae654e601';
 
 // --- Vocabulary, reading, grammar, listening ---------------------------------------------------
 
@@ -235,24 +235,7 @@ function speakSection(L) {
 
 // --- Writing ----------------------------------------------------------------------------------
 
-function translationItem(date, i, t) {
-  const key = `trans.${i}`;
-  const input = h('textarea', { class: 'field', rows: 2, placeholder: '用英文寫出來' }, store.ans(date, key) || '');
-  const out = h('div');
-  const show = (value) => put(out,
-    h('p', { class: 'ref' }, '參考：', t.en, ' ', sayBtn(t.en)),
-    t.alt?.length ? h('p', { class: 'muted' }, '也可以：', t.alt.join(' ／ ')) : null,
-    h('p', { class: 'muted' }, `和參考答案的相似度 ${pct(core.translationScore(t, value))}（意思對就好，不必一字不差）`));
-  const check = () => {
-    const value = input.value.trim();
-    if (!value) return;
-    store.setAns(date, key, value, core.translationScore(t, value));
-    show(value);
-  };
-  if (store.ans(date, key)) show(store.ans(date, key));
-  return h('div', { class: 'card', 'data-ans': `${date}|${key}` }, h('p', { class: 'zh-big' }, t.zh), input,
-    h('button', { class: 'btn', type: 'button', onclick: check }, '對照答案'), out);
-}
+const translationItem = (date, i, t) => translationCard(t, store.scoredStore(date, `trans.${i}`), { attrs: { 'data-ans': `${date}|trans.${i}` } });
 
 function writingFeedback(L, text) {
   const w = L.writing;

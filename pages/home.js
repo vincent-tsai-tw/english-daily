@@ -1,11 +1,12 @@
 // The home page of a lesson day: level, coach notes, the next section to do, the six sections,
 // the challenge and the review and practice calls to action.
 
-import { store, library } from '../state.js?v=61e1476431';
-import { today } from '../store.js?v=61e1476431';
-import { h, icon, formatDate, stat, levelTag, showSheet } from '../dom.js?v=61e1476431';
-import { SECTIONS, suggestionFor, nextSectionOf } from '../sections.js?v=61e1476431';
-import { notesCard } from '../widgets/notes.js?v=61e1476431';
+import { store, library } from '../state.js?v=eae654e601';
+import { today } from '../store.js?v=eae654e601';
+import { h, icon, formatDate, stat, levelTag, showSheet } from '../dom.js?v=eae654e601';
+import { SECTIONS, suggestionFor, nextSectionOf } from '../sections.js?v=eae654e601';
+import { notesCard } from '../widgets/notes.js?v=eae654e601';
+import { weeklyCard } from '../widgets/weekly.js?v=eae654e601';
 
 function coachCard(coach) {
   if (!coach?.focus_zh?.length) return null;
@@ -60,6 +61,7 @@ export async function homePage(date) {
       : h('p', { class: 'done-note' }, icon('check'), '這一課全部完成了！'),
     !store.state.profile?.t ? h('a', { class: 'card notice', href: '#/goals' },
       h('strong', {}, '告訴老師你的目標和興趣'), h('span', { class: 'muted' }, '花 30 秒選一選，之後的課會更貼近你想用英文的地方。')) : null,
+    isCurrent ? weeklyCard() : null,
     notesCard(),
     pending.length ? h('a', { class: 'card notice', href: `#/l/${pending[0].split('|')[0]}/speak` },
       h('strong', {}, `口說待補 ${pending.length} 題`), h('span', { class: 'muted' }, '在外面時先默念或打字的題目，回家花幾分鐘用說的補完。')) : null,

@@ -3,10 +3,10 @@
 // shared profile list and changelog, and the teacher's essay feedback and advisor reports (written
 // only by the Mac, cached here). The Store owns everything the learner writes.
 
-import * as core from './core.js?v=61e1476431';
-import * as speech from './speech.js?v=61e1476431';
-import * as gist from './gist.js?v=61e1476431';
-import { readJSON, writeJSON, today, wkey, keyFor } from './store.js?v=61e1476431';
+import * as core from './core.js?v=eae654e601';
+import * as speech from './speech.js?v=eae654e601';
+import * as gist from './gist.js?v=eae654e601';
+import { readJSON, writeJSON, today, wkey, keyFor } from './store.js?v=eae654e601';
 
 export async function getJSON(url) {
   const res = await fetch(url, { cache: 'no-cache' });

@@ -1,9 +1,9 @@
 // Grammar diagrams: a formula drawn as blocks, a past–now–future timeline, one card per usage with
 // its own examples, and wrong/right pairs (lesson-format.md, grammar.guide).
 
-import * as core from '../core.js?v=61e1476431';
-import { h } from '../dom.js?v=61e1476431';
-import { sayBtn } from './audio.js?v=61e1476431';
+import * as core from '../core.js?v=eae654e601';
+import { h } from '../dom.js?v=eae654e601';
+import { sayBtn } from './audio.js?v=eae654e601';
 
 const formula = (form) => h('div', { class: 'formula' }, core.formulaParts(form).map((p) =>
   h('span', { class: `fx ${p.kind}` }, p.text)));
