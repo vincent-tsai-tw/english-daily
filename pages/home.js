@@ -1,12 +1,12 @@
 // The home page of a lesson day: level, coach notes, the next section to do, the six sections,
 // the challenge and the review and practice calls to action.
 
-import { store, library } from '../state.js?v=f46691462d';
-import { today } from '../store.js?v=f46691462d';
-import { h, icon, formatDate, stat, levelTag, showSheet } from '../dom.js?v=f46691462d';
-import { SECTIONS, suggestionFor, nextSectionOf } from '../sections.js?v=f46691462d';
-import { notesCard } from '../widgets/notes.js?v=f46691462d';
-import { weeklyCard } from '../widgets/weekly.js?v=f46691462d';
+import { store, library } from '../state.js?v=8942a1287a';
+import { today } from '../store.js?v=8942a1287a';
+import { h, icon, formatDate, stat, levelTag, showSheet } from '../dom.js?v=8942a1287a';
+import { SECTIONS, suggestionFor, nextSectionOf } from '../sections.js?v=8942a1287a';
+import { notesCard } from '../widgets/notes.js?v=8942a1287a';
+import { weeklyCard } from '../widgets/weekly.js?v=8942a1287a';
 
 function coachCard(coach) {
   if (!coach?.focus_zh?.length) return null;

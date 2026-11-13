@@ -1,10 +1,11 @@
 // The parts of the page around the current view: profile picker, welcome and error screens, the
 // quiet-mode button, the review badge, the sync line, the unanswered markers and the update bell.
 
-import { store, library, syncer } from '../state.js?v=f46691462d';
-import { readText, writeText } from '../store.js?v=f46691462d';
-import { h, $, put, icon, formatDate, formatTime, toast, showSheet } from '../dom.js?v=f46691462d';
-import { rerender } from '../nav.js?v=f46691462d';
+import { store, library, syncer } from '../state.js?v=8942a1287a';
+import { readText, writeText } from '../store.js?v=8942a1287a';
+import { h, $, put, icon, formatDate, formatTime, toast, showSheet } from '../dom.js?v=8942a1287a';
+import { LoadError } from '../net.js?v=8942a1287a';
+import { rerender } from '../nav.js?v=8942a1287a';
 
 const SEEN_KEY = 'english-daily:seen-release';
 
@@ -26,9 +27,19 @@ export function welcomePage() {
     h('p', { class: 'sync-line', id: 'sync-line' }));
 }
 
-export function errorBox(err) {
-  return h('div', { class: 'page' }, h('h1', { class: 'title' }, '出了點問題'), h('p', { class: 'muted' }, err.message),
-    h('a', { class: 'btn', href: '#/' }, '回到今日'));
+// What the page shows when it cannot be drawn. `retry` draws it again; a load error (the data
+// did not arrive) is also retried by the app on its own once the network is back.
+export function errorBox(err, retry) {
+  const offline = err instanceof LoadError;
+  const again = h('button', {
+    class: 'btn primary', type: 'button',
+    onclick: () => { again.disabled = true; again.textContent = '連線中…'; retry(); },
+  }, '再試一次');
+  return h('div', { class: 'page' },
+    h('h1', { class: 'title' }, offline ? '還沒連上網路' : '出了點問題'),
+    h('p', { class: 'muted' }, offline ? '課程資料沒有載入成功，通常是剛打開時網路還沒接上。網路恢復後會自動再試，也可以直接按下面的按鈕。' : err.message),
+    h('div', { class: 'row' }, retry ? again : null, offline ? null : h('a', { class: 'btn', href: '#/' }, '回到今日')),
+    offline ? h('p', { class: 'hint' }, `沒載入的檔案：${err.url}`) : null); // so a report says which file
 }
 
 export function setQuiet(on, repaint = true) {

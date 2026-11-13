@@ -1,12 +1,12 @@
 // Notes to the teacher: the learner writes what they want to work on; the next lessons answer
 // through their `replies`, which the index carries (core.notesSummary pairs them up).
 
-import * as core from '../core.js?v=f46691462d';
-import { store } from '../state.js?v=f46691462d';
-import { writeText } from '../store.js?v=f46691462d';
-import { h, toast, formatDate, shortDate } from '../dom.js?v=f46691462d';
-import { rerender } from '../nav.js?v=f46691462d';
-import { notesOverview as overview, notesSeenKey as seenKey } from '../widgets/notes.js?v=f46691462d';
+import * as core from '../core.js?v=8942a1287a';
+import { store } from '../state.js?v=8942a1287a';
+import { writeText } from '../store.js?v=8942a1287a';
+import { h, toast, formatDate, shortDate } from '../dom.js?v=8942a1287a';
+import { rerender } from '../nav.js?v=8942a1287a';
+import { notesOverview as overview, notesSeenKey as seenKey } from '../widgets/notes.js?v=8942a1287a';
 
 const NOTE_SKILLS = ['單字', '閱讀', '文法', '聽力', '口說', '寫作', '其他'];
 

@@ -2,13 +2,13 @@
 // skill trends, level history, grammar mastery, vocabulary, essays and habits. Charts follow the
 // dataviz rules: one hue per job, no colour alone, text in text colours.
 
-import * as core from '../core.js?v=f46691462d';
-import { store, library } from '../state.js?v=f46691462d';
-import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=f46691462d';
-import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=f46691462d';
-import { SECTIONS } from '../sections.js?v=f46691462d';
-import { notesCard } from '../widgets/notes.js?v=f46691462d';
-import { weeklyTable } from '../widgets/weekly.js?v=f46691462d';
+import * as core from '../core.js?v=8942a1287a';
+import { store, library } from '../state.js?v=8942a1287a';
+import { today, wkey, isWeak, readJSON, writeJSON } from '../store.js?v=8942a1287a';
+import { h, svg, put, pct, shortDate, stat, WEEKDAYS } from '../dom.js?v=8942a1287a';
+import { SECTIONS } from '../sections.js?v=8942a1287a';
+import { notesCard } from '../widgets/notes.js?v=8942a1287a';
+import { weeklyTable } from '../widgets/weekly.js?v=8942a1287a';
 
 function advisorCard(p, reports) {
   const dates = Object.keys(reports || {}).sort();

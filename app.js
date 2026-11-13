@@ -4,23 +4,24 @@
 // syncs to that learner's file in a secret gist (sync.js), which the daily lesson generator reads.
 // This file only wires the pieces together: routes, shell events and boot.
 
-import * as speech from './speech.js?v=f46691462d';
-import { store, library, syncer } from './state.js?v=f46691462d';
-import { $, put, toast, hideSheet } from './dom.js?v=f46691462d';
-import { Router, hashParts } from './router.js?v=f46691462d';
-import { onRoute } from './nav.js?v=f46691462d';
-import { PULL_EVERY_MS } from './sync.js?v=f46691462d';
-import { profilePage, welcomePage, errorBox, setQuiet, paintQuiet, updateBadge, paintSyncLine, paintTodo, paintBell, openUpdates } from './pages/shell.js?v=f46691462d';
-import { homePage } from './pages/home.js?v=f46691462d';
-import { sectionPage, challengePage } from './pages/lesson.js?v=f46691462d';
-import { reviewPage } from './pages/review.js?v=f46691462d';
-import { practicePage } from './pages/practice.js?v=f46691462d';
-import { dashboardPage } from './pages/dashboard.js?v=f46691462d';
-import { historyPage } from './pages/history.js?v=f46691462d';
-import { settingsPage, goalsPage } from './pages/settings.js?v=f46691462d';
-import { notesPage } from './pages/notes.js?v=f46691462d';
-import { weeklyPage } from './pages/weekly.js?v=f46691462d';
-import { LOOKUP_IN, wordAtPoint, openDictionary } from './widgets/dictionary.js?v=f46691462d';
+import * as speech from './speech.js?v=8942a1287a';
+import { store, library, syncer } from './state.js?v=8942a1287a';
+import { $, put, toast, hideSheet } from './dom.js?v=8942a1287a';
+import { Router, hashParts } from './router.js?v=8942a1287a';
+import { onRoute } from './nav.js?v=8942a1287a';
+import { PULL_EVERY_MS } from './sync.js?v=8942a1287a';
+import { LoadError } from './net.js?v=8942a1287a';
+import { profilePage, welcomePage, errorBox, setQuiet, paintQuiet, updateBadge, paintSyncLine, paintTodo, paintBell, openUpdates } from './pages/shell.js?v=8942a1287a';
+import { homePage } from './pages/home.js?v=8942a1287a';
+import { sectionPage, challengePage } from './pages/lesson.js?v=8942a1287a';
+import { reviewPage } from './pages/review.js?v=8942a1287a';
+import { practicePage } from './pages/practice.js?v=8942a1287a';
+import { dashboardPage } from './pages/dashboard.js?v=8942a1287a';
+import { historyPage } from './pages/history.js?v=8942a1287a';
+import { settingsPage, goalsPage } from './pages/settings.js?v=8942a1287a';
+import { notesPage } from './pages/notes.js?v=8942a1287a';
+import { weeklyPage } from './pages/weekly.js?v=8942a1287a';
+import { LOOKUP_IN, wordAtPoint, openDictionary } from './widgets/dictionary.js?v=8942a1287a';
 
 // `idle` pages have nothing half-typed, so a sync or an app update may re-render or reload them.
 const router = new Router()
@@ -41,14 +42,50 @@ const router = new Router()
 // Pages that work before the first lesson exists.
 const NO_LESSON_PAGES = ['settings', 'review', 'progress', 'history'];
 
+const BUILD_CACHE = 'english-daily-8942a1287a'; // the cache the service worker of this build fills (sw.js SHELL_CACHE)
+const AUTO_RETRY_MS = 8000; // while a load error is on screen, try again this often
+
 let updateReady = false;
+let loading = null; // the first load of the shared data, while it runs
+let loaded = false; // the profiles and the signed-in learner's lessons are in memory
+let waiting = false; // a load error is on screen: try again when the network may be back
+let retryTimer = 0;
+let routeSeq = 0; // the newest route() call: an older one that finishes late must not draw over it
 const isIdleRoute = () => Boolean(router.match(hashParts())?.idle);
 
 function refreshIfIdle() {
   if (isIdleRoute()) route(); else updateBadge();
 }
 
-const pull = () => syncer.now().then((changed) => { if (changed) refreshIfIdle(); else paintSyncLine(); });
+// Sync with the gist; while a load error is on screen, the same moments (the app comes back to
+// the front, the minute timer) try to load the page again instead.
+function pull() {
+  if (waiting) return route();
+  library.refreshIndex().then((newer) => { if (newer) refreshIfIdle(); }).catch(() => {}); // a new day's lesson
+  return syncer.now().then((changed) => { if (changed) refreshIfIdle(); else paintSyncLine(); });
+}
+
+// What every page needs before it can be drawn. Called until it has worked once.
+function loadData() {
+  loading ||= (async () => {
+    await library.loadShared();
+    paintBell();
+    if (store.me && !library.profiles.some((p) => p.slug === store.me.slug)) store.signOut();
+    if (store.me) await library.loadUser();
+    loaded = true;
+  })().finally(() => { loading = null; });
+  return loading;
+}
+
+// Show why the page could not be drawn. Data that did not arrive is asked for again on its own:
+// every AUTO_RETRY_MS while the app is in front, when the phone reports it is online again and
+// when the app comes back to the front (see pull).
+function showError(err) {
+  put($('#view'), errorBox(err, route));
+  waiting = err instanceof LoadError;
+  clearTimeout(retryTimer);
+  if (waiting) retryTimer = setTimeout(() => { if (waiting && document.visibilityState === 'visible') route(); }, AUTO_RETRY_MS);
+}
 
 async function chooseProfile(profile) {
   store.choose(profile, library.profiles[0]?.slug);
@@ -56,18 +93,28 @@ async function chooseProfile(profile) {
     await library.loadUser();
   } catch (err) {
     store.signOut(); // the picker comes back on the next route instead of a dead end
-    put($('#view'), errorBox(err));
+    showError(err);
     return;
   }
   location.hash = '#/';
   await route();
-  pull();
+  if (!waiting) pull();
 }
 
+// Draw the page for the current address. Loading can take seconds on a bad network (net.js tries
+// again), and taps, the retry timer and the sync all call this: only the newest call draws.
 async function route() {
   if (updateReady) { location.reload(); return; }
+  const seq = ++routeSeq;
+  const recovering = waiting;
   speech.stop();
   hideSheet();
+  clearTimeout(retryTimer);
+  if (!loaded) {
+    try { await loadData(); } catch (err) { if (seq === routeSeq) showError(err); return; }
+    if (seq !== routeSeq) return;
+  }
+  waiting = false;
   document.body.classList.toggle('signed-out', !store.me);
   if (!store.me) { put($('#view'), profilePage(chooseProfile)); window.scrollTo(0, 0); return; }
   const parts = hashParts();
@@ -79,18 +126,21 @@ async function route() {
     if (!library.index.length && !NO_LESSON_PAGES.includes(parts[0])) page = welcomePage();
     else if (hit) { tab = hit.tab; page = await hit.handler(hit.params); }
     else throw new Error('找不到這個頁面');
+    if (seq !== routeSeq) return;
     if (parts[0] === 'l' && parts[1] !== library.currentLessonDate()) tab = 'history';
     put(view, page);
     view.classList.toggle('show-todo', parts[3] === 'todo');
     paintTodo();
   } catch (err) {
-    put(view, errorBox(err));
+    if (seq !== routeSeq) return;
+    showError(err);
   }
   document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.dataset.tab === tab));
   paintSyncLine();
   updateBadge();
   window.scrollTo(0, 0);
   if (parts[3] === 'todo') requestAnimationFrame(() => view.querySelector('.todo')?.scrollIntoView({ block: 'center' }));
+  if (recovering && !waiting) pull(); // back after a load error: catch up on the sync that was skipped
 }
 
 async function boot() {
@@ -111,18 +161,10 @@ async function boot() {
     if (hit) openDictionary(hit.word, hit.sentence);
   });
   paintQuiet();
-  try {
-    await library.loadShared();
-    paintBell();
-    if (store.me && !library.profiles.some((p) => p.slug === store.me.slug)) store.signOut();
-    if (store.me) await library.loadUser();
-  } catch (err) {
-    put($('#view'), errorBox(err));
-    return;
-  }
   window.addEventListener('hashchange', route);
-  await route();
-  pull();
+  window.addEventListener('online', () => { if (waiting) route(); });
+  await route(); // loads the data first; a failure leaves the error page, which keeps trying
+  if (!waiting) pull();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { syncer.flush(); return; }
     pull();
@@ -132,8 +174,11 @@ async function boot() {
   setInterval(() => { if (document.visibilityState === 'visible') pull(); }, PULL_EVERY_MS);
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     const hadController = Boolean(navigator.serviceWorker.controller);
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
+    navigator.serviceWorker.addEventListener('controllerchange', async () => {
       if (!hadController || updateReady) return;
+      // A worker of this very build took over (the page was loaded fresh from the network before
+      // the worker updated): the page is already the new version, nothing to reload.
+      if (await caches.has(BUILD_CACHE).catch(() => false)) return;
       updateReady = true;
       if (isIdleRoute()) location.reload();
     });

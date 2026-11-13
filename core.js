@@ -166,6 +166,12 @@ export function formulaParts(form) {
 // Position (percent across the track) of a timeline point from -3 (long ago) to 3 (later).
 export const timelinePct = (v) => 6 + ((Math.max(-3, Math.min(3, v)) + 3) / 6) * 88;
 
+// The app can stay open for days, and nothing reloads it when a lesson is published. Whether to
+// look for a new lesson list (`index` is newest first): today's lesson is not in it and the last
+// look was a while ago.
+export const INDEX_CHECK_MS = 10 * 60 * 1000;
+export const indexStale = (index, today, sinceLastCheckMs) => !(index?.[0]?.date >= today) && sinceLastCheckMs >= INDEX_CHECK_MS;
+
 // Order to work through a lesson: vocabulary first (its words come back in the reading and
 // dialogue), then the suggested weakest skill, then the rest in list order.
 export function sectionOrder(ids, suggested) {

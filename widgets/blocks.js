@@ -1,12 +1,12 @@
 // Blocks shared by lessons, challenges and free practice: reading with tappable vocabulary,
 // dictation, dialogues, and the input fields and score lines they use.
 
-import * as core from '../core.js?v=f46691462d';
-import * as speech from '../speech.js?v=f46691462d';
-import { store, library } from '../state.js?v=f46691462d';
-import { h, put, pct, formatDate, showSheet } from '../dom.js?v=f46691462d';
-import { sayBtn, slowBtn, playButton, rateToggle, ttsOpts } from './audio.js?v=f46691462d';
-import { questionList } from './questions.js?v=f46691462d';
+import * as core from '../core.js?v=8942a1287a';
+import * as speech from '../speech.js?v=8942a1287a';
+import { store, library } from '../state.js?v=8942a1287a';
+import { h, put, pct, formatDate, showSheet } from '../dom.js?v=8942a1287a';
+import { sayBtn, slowBtn, playButton, rateToggle, ttsOpts } from './audio.js?v=8942a1287a';
+import { questionList } from './questions.js?v=8942a1287a';
 
 export const PASS = 0.9; // a spoken or typed sentence this close to the original counts as right
 export const TRANS_PASS = 0.8; // a translation this close to a reference counts as right in practice

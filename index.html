@@ -13,8 +13,17 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="style.css?v=f46691462d">
-<script type="module" src="app.js?v=f46691462d"></script>
+<link rel="stylesheet" href="style.css?v=8942a1287a">
+<script>
+// The app's code did not arrive (one module failed to download): say so and offer another try
+// instead of leaving 載入中… on screen. What did arrive is cached, so each try gets further.
+function appFailed() {
+  document.getElementById('view').innerHTML = '<div class="page"><h1 class="title">還沒連上網路</h1>'
+    + '<p class="muted">App 沒有完整載入，通常是網路剛好不穩。</p>'
+    + '<button class="btn primary" type="button" onclick="location.reload()">再試一次</button></div>';
+}
+</script>
+<script type="module" src="app.js?v=8942a1287a" onerror="appFailed()"></script>
 </head>
 <body>
 <header class="top">

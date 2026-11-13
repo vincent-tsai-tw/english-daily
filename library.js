@@ -3,16 +3,11 @@
 // shared profile list and changelog, and the teacher's essay feedback and advisor reports (written
 // only by the Mac, cached here). The Store owns everything the learner writes.
 
-import * as core from './core.js?v=f46691462d';
-import * as speech from './speech.js?v=f46691462d';
-import * as gist from './gist.js?v=f46691462d';
-import { readJSON, writeJSON, today, wkey, keyFor } from './store.js?v=f46691462d';
-
-export async function getJSON(url) {
-  const res = await fetch(url, { cache: 'no-cache' });
-  if (!res.ok) throw new Error(`讀取 ${url} 失敗（${res.status}）`);
-  return res.json();
-}
+import * as core from './core.js?v=8942a1287a';
+import * as speech from './speech.js?v=8942a1287a';
+import * as gist from './gist.js?v=8942a1287a';
+import { getJSON } from './net.js?v=8942a1287a';
+import { readJSON, writeJSON, now, today, wkey, keyFor } from './store.js?v=8942a1287a';
 
 const feedbackKey = (slug) => `english-daily:feedback:${slug}`;
 const advisorKey = (slug) => `english-daily:advisor:${slug}`;
@@ -30,6 +25,7 @@ export class Library {
     this.poolPromise = null;
     this.dict = {}; // letter -> {word: [ipa, zh, en] | base word}
     this.people = new Map(); // slug -> Promise of another learner's dashboard data
+    this.indexChecked = 0; // when the lesson list was last loaded or looked for (ms)
   }
 
   get base() { return `data/u/${this.store.slug}`; }
@@ -43,11 +39,42 @@ export class Library {
     const slug = this.store.slug;
     this.feedback = readJSON(feedbackKey(slug), {}) || {};
     this.advisor = readJSON(advisorKey(slug), {}) || {};
+    this.dropLoaded();
+    [{ lessons: this.index }, this.deck] = await Promise.all([getJSON(`${this.base}/index.json`), getJSON(`${this.base}/vocab.json`)]);
+    this.indexChecked = now();
+    for (const v of this.deck) speech.addClips(v.audio);
+  }
+
+  // Forget what was loaded on demand (lessons, the practice pool, the other learner's dashboard):
+  // it belongs to another learner, or to the lesson list of an earlier day.
+  dropLoaded() {
     this.people.clear();
     this.lessons.clear();
     this.poolPromise = null;
-    [{ lessons: this.index }, this.deck] = await Promise.all([getJSON(`${this.base}/index.json`), getJSON(`${this.base}/vocab.json`)]);
-    for (const v of this.deck) speech.addClips(v.audio);
+  }
+
+  // Look for lessons published since the list was loaded (core.indexStale says when). Resolves
+  // to whether a newer lesson arrived. A look that fails does not count as one: the next chance
+  // (the app comes to the front, the minute timer) asks again.
+  async refreshIndex() {
+    const slug = this.store.slug;
+    const checked = this.indexChecked;
+    if (!slug || !core.indexStale(this.index, today(), now() - checked)) return false;
+    this.indexChecked = now(); // one look at a time
+    let lessons;
+    let deck;
+    try {
+      [{ lessons }, deck] = await Promise.all([getJSON(`${this.base}/index.json`, { delays: [] }), getJSON(`${this.base}/vocab.json`, { delays: [] })]);
+    } catch (err) {
+      if (slug === this.store.slug) this.indexChecked = checked;
+      throw err;
+    }
+    if (slug !== this.store.slug || !(lessons[0]?.date > (this.index[0]?.date || ''))) return false;
+    this.index = lessons;
+    this.deck = deck;
+    this.dropLoaded(); // the pool and the lessons were built before today's publication
+    for (const v of deck) speech.addClips(v.audio);
+    return true;
   }
 
   // Teacher data fetched for `slug`; ignored if the profile was switched meanwhile.
@@ -103,7 +130,8 @@ export class Library {
   }
 
   dictLetter(letter) {
-    this.dict[letter] ||= getJSON(`data/dict/${letter}.json`).catch(() => { delete this.dict[letter]; return {}; }); // retried next time
+    // One quick second try only: a look-up that cannot load falls back to the online dictionary.
+    this.dict[letter] ||= getJSON(`data/dict/${letter}.json`, { delays: [400] }).catch(() => { delete this.dict[letter]; return {}; }); // retried next time
     return this.dict[letter];
   }
 
